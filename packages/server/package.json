@@ -1,0 +1,15 @@
+{
+  "name": "@land-of-bron/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --bun --watch src/index.ts",
+    "start": "bun --bun src/index.ts"
+  },
+  "dependencies": {
+    "@land-of-bron/game": "workspace:*",
+    "boardgame.io": "^0.50.2",
+    "effect": "beta"
+  }
+}
