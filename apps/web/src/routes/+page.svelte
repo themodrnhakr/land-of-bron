@@ -4,7 +4,7 @@
 
 <main class="page">
 	<header class="hero">
-		<h1>Hex Map Layouts</h1>
+		<h1 class="page-title">Hex Map Layouts</h1>
 		<p>
 			A visual explorer for different ways to arrange a set of hex-grid
 			nations. Every layout gives each nation exactly 7 tiles — a capital
@@ -12,6 +12,8 @@
 			and the neutral space between nations differ per strategy.
 		</p>
 	</header>
+
+	<HexGridDemo />
 
 	<section class="strategies" aria-label="Layout strategies">
 		<article class="strategy-card">
@@ -36,8 +38,6 @@
 		</article>
 	</section>
 
-	<HexGridDemo />
-
 	<p class="footnote">
 		Two additional layouts (Spaced Nations and Organic Voronoi expansion)
 		still exist in the codebase but are intentionally hidden from this demo.
@@ -55,10 +55,14 @@
 		margin: 0 auto;
 	}
 
-	.hero h1 {
+	.page-title {
 		font-size: 2rem;
 		margin: 0 0 0.5rem;
 		letter-spacing: -0.02em;
+	}
+
+	.hero {
+		margin-bottom: 1.5rem;
 	}
 
 	.hero p {

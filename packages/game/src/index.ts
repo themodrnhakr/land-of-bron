@@ -5,3 +5,7 @@ export * as Game from "./Game.ts";
 export * as State from "./State.ts";
 
 export * as Parts from "./Parts.ts";
+
+export * as Nation from "./Nation.ts";
+
+export * as Tile from "./Tile.ts";

@@ -1,4 +1,6 @@
 <script lang="ts">
+import { Tile } from "@land-of-bron/game";
+
 // --- TYPES & CONSTANTS ---
 type Strategy = "lattice" | "spaced" | "organic" | "ragged";
 
@@ -48,7 +50,13 @@ let nationCount = $state<number>(4);
 let tileWidth = $state<number>(54);
 let gap = $state<number>(4);
 let hoveredTile = $state<TileData | null>(null);
+// Pan state for dragging around the map with the mouse/touch.
+let panX = $state<number>(0);
+let panY = $state<number>(0);
+let dragging = $state<boolean>(false);
+let dragStart = $state({ x: 0, y: 0, panX: 0, panY: 0 });
 let raggedSeed = $state<number>(DEFAULT_SEED); // deterministic seed for the Ragged Frontier strategy
+let useGamePkg = $state<boolean>(false); // use the @land-of-bron/game Tile generator instead of the local demo code
 let showNeutral = $state<boolean>(true); // toggle sea / neutral tile rendering
 
 // --- MATH HELPERS ---
@@ -376,6 +384,31 @@ function generateRaggedMap(count: number, rng: () => number): TileData[] {
 
 // Reactive Map Generation
 let tiles = $derived.by(() => {
+  // Game-package implementation (packages/game/src/Tile.ts): supports lattice
+  // and frontier only. Used to cross-check parity against the local
+  // generators below (the same seed should produce the same layout).
+  if (useGamePkg && (strategy === "lattice" || strategy === "ragged")) {
+    const nations = Tile.generateCoords({
+      playerCount: nationCount,
+      strategy: strategy === "ragged" ? "frontier" : "lattice",
+      seed: raggedSeed,
+      target: 7,
+      noisePoolFraction: 0.35,
+      seedRingDist: 2,
+      growthCap: 4,
+    });
+    const gameTiles: TileData[] = [];
+    nations.forEach((territory, nationId) => {
+      territory.forEach((c, idx) => {
+        gameTiles.push({ q: c.q, r: c.r, nationId, isCapital: idx === 0 });
+      });
+    });
+    Tile.neutralCoords(nations).forEach((c) => {
+      gameTiles.push({ q: c.q, r: c.r, nationId: null, isCapital: false });
+    });
+    return gameTiles;
+  }
+
   switch (strategy) {
     case "lattice":
       return generateLatticeMap(nationCount);
@@ -397,6 +430,54 @@ let renderedTiles = $derived.by(() =>
 </script>
 
 <div class="map-generator">
+
+  <!-- HEX GRID CONTAINER -->
+  <main
+    class="grid-viewport"
+    class:dragging={dragging}
+    style="--w: {tileWidth}px; --g: {gap}px; --pan-x: {panX}px; --pan-y: {panY}px"
+    onpointerdown={(e) => {
+      dragging = true;
+      dragStart = { x: e.clientX, y: e.clientY, panX, panY };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }}
+    onpointermove={(e) => {
+      if (!dragging) return;
+      panX = dragStart.panX + (e.clientX - dragStart.x);
+      panY = dragStart.panY + (e.clientY - dragStart.y);
+    }}
+    onpointerup={() => (dragging = false)}
+    onpointercancel={() => (dragging = false)}
+    ondblclick={() => {
+      // Double-click to re-center the map.
+      panX = 0;
+      panY = 0;
+    }}
+  >
+    {#each renderedTiles as tile (`${tile.q},${tile.r}`)}
+      {@const styleObj = tile.nationId !== null ? NATION_COLORS[tile.nationId] : SEA_COLOR}
+      <button
+        type="button"
+        class="hex-tile"
+        class:is-capital={tile.isCapital}
+        class:is-sea={tile.nationId === null}
+        style="--q: {tile.q}; --r: {tile.r}; --bg: {styleObj.bg}; --border: {styleObj.border}"
+        onmouseenter={() => {
+          if (!dragging) hoveredTile = tile;
+        }}
+        onmouseleave={() => (hoveredTile = null)}
+      >
+        <span class="coord-label">
+          {#if tile.isCapital}
+            ★
+          {:else}
+            {tile.q},{tile.r}
+          {/if}
+        </span>
+      </button>
+    {/each}
+  </main>
+
   <!-- CONTROL BAR -->
   <header class="control-panel">
     <div class="control-group">
@@ -424,6 +505,33 @@ let renderedTiles = $derived.by(() =>
           4. Ragged Frontier
         </button>
       </div>
+    </div>
+
+    <div class="control-group">
+      <span class="control-label">Source:</span>
+      <div class="segmented" role="group" aria-label="Implementation source">
+        <button
+          type="button"
+          class="seg-btn"
+          class:active={!useGamePkg}
+          aria-pressed={!useGamePkg}
+          onclick={() => (useGamePkg = false)}
+        >
+          Demo
+        </button>
+        <button
+          type="button"
+          class="seg-btn"
+          class:active={useGamePkg}
+          aria-pressed={useGamePkg}
+          onclick={() => (useGamePkg = true)}
+        >
+          Game pkg
+        </button>
+      </div>
+      {#if useGamePkg}
+        <span class="hint">from @land-of-bron/game — check parity against the demo</span>
+      {/if}
     </div>
 
     {#if strategy === "ragged"}
@@ -486,33 +594,6 @@ let renderedTiles = $derived.by(() =>
     </div>
   </header>
 
-  <!-- HEX GRID CONTAINER -->
-  <main
-    class="grid-viewport"
-    style="--w: {tileWidth}px; --g: {gap}px"
-  >
-    {#each renderedTiles as tile (`${tile.q},${tile.r}`)}
-      {@const styleObj = tile.nationId !== null ? NATION_COLORS[tile.nationId] : SEA_COLOR}
-      <button
-        type="button"
-        class="hex-tile"
-        class:is-capital={tile.isCapital}
-        class:is-sea={tile.nationId === null}
-        style="--q: {tile.q}; --r: {tile.r}; --bg: {styleObj.bg}; --border: {styleObj.border}"
-        onmouseenter={() => (hoveredTile = tile)}
-        onmouseleave={() => (hoveredTile = null)}
-      >
-        <span class="coord-label">
-          {#if tile.isCapital}
-            ★
-          {:else}
-            {tile.q},{tile.r}
-          {/if}
-        </span>
-      </button>
-    {/each}
-  </main>
-
   <!-- STATUS FOOTER -->
   <footer class="status-bar">
     {#if hoveredTile}
@@ -562,7 +643,7 @@ let renderedTiles = $derived.by(() =>
   gap: 1.5rem;
   padding: 1rem 1.5rem;
   background: #0f172a;
-  border-bottom: 1px solid #1e293b;
+  border-top: 1px solid #1e293b;
   align-items: center;
 }
 
@@ -713,6 +794,13 @@ input[type="range"] {
   justify-content: center;
   overflow: hidden;
   background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+  cursor: grab;
+  touch-action: none; /* pan with touch instead of scrolling */
+  user-select: none;
+}
+
+.grid-viewport.dragging {
+  cursor: grabbing;
 }
 
 /* Hexagon Styling using modern CSS corner-shape & fallback clip-path */
@@ -724,9 +812,13 @@ input[type="range"] {
   corner-shape: bevel;
   clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
 
-  /* Position calculation from q and r */
-  left: calc(50% + (var(--q) + var(--r) / 2) * (var(--w) + var(--g)));
-  top: calc(50% + var(--r) * cos(30deg) * (var(--w) + var(--g)));
+  /* Position calculation from q and r (plus drag pan offset) */
+  left: calc(
+    50% + (var(--q) + var(--r) / 2) * (var(--w) + var(--g)) + var(--pan-x)
+  );
+  top: calc(
+    50% + var(--r) * cos(30deg) * (var(--w) + var(--g)) + var(--pan-y)
+  );
   transform: translate(-50%, -50%);
 
   /* Colors and Transitions */
