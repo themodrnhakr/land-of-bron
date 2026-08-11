@@ -9,3 +9,7 @@ export * as Parts from "./Parts.ts";
 export * as Nation from "./Nation.ts";
 
 export * as Tile from "./Tile.ts";
+
+export * as BoardGeneration from "./BoardGeneration.ts";
+
+export * as BoardGenerationStrategies from "./BoardGenerationStrategies.ts";

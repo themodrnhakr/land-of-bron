@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Tile } from "@land-of-bron/game";
+import { BoardGeneration } from "@land-of-bron/game";
 
 // --- TYPES & CONSTANTS ---
 type Strategy = "lattice" | "spaced" | "organic" | "ragged";
@@ -384,11 +384,11 @@ function generateRaggedMap(count: number, rng: () => number): TileData[] {
 
 // Reactive Map Generation
 let tiles = $derived.by(() => {
-  // Game-package implementation (packages/game/src/Tile.ts): supports lattice
-  // and frontier only. Used to cross-check parity against the local
-  // generators below (the same seed should produce the same layout).
+  // Game-package implementation (packages/game/src/BoardGeneration.ts):
+  // supports lattice and frontier only. Used to cross-check parity against
+  // the local generators below (the same seed should produce the same layout).
   if (useGamePkg && (strategy === "lattice" || strategy === "ragged")) {
-    const nations = Tile.generateCoords({
+    const result = BoardGeneration.generateCoords({
       playerCount: nationCount,
       strategy: strategy === "ragged" ? "frontier" : "lattice",
       seed: raggedSeed,
@@ -397,13 +397,19 @@ let tiles = $derived.by(() => {
       seedRingDist: 2,
       growthCap: 4,
     });
+    if (result._tag === "Failure") {
+      throw new Error(
+        `BoardGeneration.generateCoords failed: ${result.failure._tag}`,
+      );
+    }
+    const nations = result.success;
     const gameTiles: TileData[] = [];
     nations.forEach((territory, nationId) => {
       territory.forEach((c, idx) => {
         gameTiles.push({ q: c.q, r: c.r, nationId, isCapital: idx === 0 });
       });
     });
-    Tile.neutralCoords(nations).forEach((c) => {
+    BoardGeneration.neutralCoords(nations).forEach((c) => {
       gameTiles.push({ q: c.q, r: c.r, nationId: null, isCapital: false });
     });
     return gameTiles;
