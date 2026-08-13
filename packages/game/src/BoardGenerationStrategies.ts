@@ -31,8 +31,17 @@ const SUPER_LATTICE: readonly Coords.Coords[] = [
   { q: 1, r: -1 },
 ];
 
-// The classic map: identical 7-tile hex blobs stamped on a zero-gap lattice.
+/**
+ * The classic map: identical 7-tile hex blobs stamped on a zero-gap lattice.
+ *
+ * The shape and positions are fixed by the lattice, so generation always
+ * succeeds; it supports up to 7 nations (one per lattice position).
+ */
 export const Lattice = {
+  /**
+   * @param opts - Resolved options (`playerCount` is the only field used).
+   * @returns A territory per nation; the first tile is the capital.
+   */
   generate(opts: ResolvedGenerateCoordsOpts): Result.Result<Array<Array<Coords.Coords>>, never> {
     return Result.succeed(
       pipe(
@@ -259,8 +268,23 @@ const groupTerritories = (
     }),
   );
 
-// Noisy, competitive growth with ragged borders and thin neutral seams.
+/**
+ * Noisy, competitive growth with ragged borders and thin neutral seams.
+ *
+ * Nations grow from capitals (one at the center, the rest on a ring at
+ * `seedRingDist`) by claiming frontier cells. The most-constrained nation
+ * moves first and picks randomly among the closest cells, so borders stay
+ * ragged while every nation still reaches exactly `target` tiles — provided
+ * the map has enough room (see {@link InsufficientRoomError}).
+ */
 export const Frontier = {
+  /**
+   * @param opts - Resolved options (`seed`, `target`, `noisePoolFraction`,
+   *   `seedRingDist`, `growthCap`, `playerCount`).
+   * @returns A territory per nation (the first tile is the capital), or
+   *   `InsufficientRoom` if the map was too small for every nation to reach
+   *   its target.
+   */
   generate(opts: ResolvedGenerateCoordsOpts): Result.Result<Array<Array<Coords.Coords>>, InsufficientRoomError> {
     const seeds = makeSeeds(opts);
     // Start with each capital owned by its nation and the PRNG seeded, then
