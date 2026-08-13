@@ -6,7 +6,7 @@ import * as Coords from "./Coords.ts";
 // Strategy: Lattice
 // ============================================================================
 
-// The 7-tile nation shape: capital plus its six surrounding hexes. This shape
+// The 7-tile nation shape: a center tile plus its six surrounding hexes. This shape
 // defines the lattice strategy, so it is fixed rather than configurable.
 const LOCAL_7_HEX: readonly Coords.Coords[] = [
   { q: 0, r: 0 },
@@ -40,7 +40,7 @@ const SUPER_LATTICE: readonly Coords.Coords[] = [
 export const Lattice = {
   /**
    * @param opts - Resolved options (`playerCount` is the only field used).
-   * @returns A territory per nation; the first tile is the capital.
+   * @returns A territory per nation.
    */
   generate(opts: ResolvedGenerateCoordsOpts): Result.Result<Array<Array<Coords.Coords>>, never> {
     return Result.succeed(
@@ -169,14 +169,14 @@ const nextRandom = (seed: number): readonly [number, number] => {
 // among the closest noisePoolFraction of candidates so borders stay ragged.
 const chooseCandidate = (
   candidates: Array<FrontierCell>,
-  capital: Coords.Coords,
+  anchor: Coords.Coords,
   noisePoolFraction: number,
   seed: number,
 ): { cell: Coords.Coords; nextSeed: number } =>
   pipe(
     Array.filter(candidates, (c) => c.own >= 2), // fillers preferred...
     (fillers) => (fillers.length > 0 ? fillers : candidates), // ...tips only as fallback
-    Array.sortBy(Order.mapInput(Order.Number, (c) => Coords.hexDistance(c, capital))),
+    Array.sortBy(Order.mapInput(Order.Number, (c) => Coords.hexDistance(c, anchor))),
     Array.take(Math.max(1, Math.floor(candidates.length * noisePoolFraction))),
     (pool) => {
       const [roll, nextSeed] = nextRandom(seed);
@@ -237,7 +237,7 @@ const grow = (
   return result.done ? result.state : grow(result.state, opts, seeds);
 };
 
-// Capital seeds: one nation at the center, the rest on a ring at seedRingDist.
+// Seed tiles: one nation at the center, the rest on a ring at seedRingDist.
 const makeSeeds = (opts: ResolvedGenerateCoordsOpts): Array<Coords.Coords> =>
   pipe(
     Coords.DIRECTIONS,
@@ -247,8 +247,9 @@ const makeSeeds = (opts: ResolvedGenerateCoordsOpts): Array<Coords.Coords> =>
   );
 
 // Rebuild per-nation territories from the final map. HashMap iteration order
-// is not insertion order, so each capital is placed first explicitly and the
-// rest is sorted by distance from the capital for a fully deterministic layout.
+// is not insertion order, so each nation's seed tile is placed first
+// explicitly and the rest is sorted by distance from it for a fully
+// deterministic layout.
 const groupTerritories = (
   map: HashMap.HashMap<Coords.Coords, number>,
   seeds: ReadonlyArray<Coords.Coords>,
@@ -256,22 +257,22 @@ const groupTerritories = (
 ): Array<Array<Coords.Coords>> =>
   pipe(
     Array.makeBy(playerCount, (id) => {
-      const capital = seeds[id]!;
+      const seed = seeds[id]!;
       const rest = pipe(
         HashMap.toEntries(map),
         Array.filter(([, owner]) => owner === id),
         Array.map(([cell]) => cell),
-        Array.filter((cell) => cell.q !== capital.q || cell.r !== capital.r),
-        Array.sortBy(Order.mapInput(Order.Number, (c) => Coords.hexDistance(c, capital))),
+        Array.filter((cell) => cell.q !== seed.q || cell.r !== seed.r),
+        Array.sortBy(Order.mapInput(Order.Number, (c) => Coords.hexDistance(c, seed))),
       );
-      return [capital, ...rest];
+      return [seed, ...rest];
     }),
   );
 
 /**
  * Noisy, competitive growth with ragged borders and thin neutral seams.
  *
- * Nations grow from capitals (one at the center, the rest on a ring at
+ * Nations grow from seed tiles (one at the center, the rest on a ring at
  * `seedRingDist`) by claiming frontier cells. The most-constrained nation
  * moves first and picks randomly among the closest cells, so borders stay
  * ragged while every nation still reaches exactly `target` tiles — provided
@@ -281,13 +282,13 @@ export const Frontier = {
   /**
    * @param opts - Resolved options (`seed`, `target`, `noisePoolFraction`,
    *   `seedRingDist`, `growthCap`, `playerCount`).
-   * @returns A territory per nation (the first tile is the capital), or
+   * @returns A territory per nation, or
    *   `InsufficientRoom` if the map was too small for every nation to reach
    *   its target.
    */
   generate(opts: ResolvedGenerateCoordsOpts): Result.Result<Array<Array<Coords.Coords>>, InsufficientRoomError> {
     const seeds = makeSeeds(opts);
-    // Start with each capital owned by its nation and the PRNG seeded, then
+    // Start with each seed tile owned by its nation and the PRNG seeded, then
     // grow to completion.
     const initial: FrontierState = {
       map: HashMap.fromIterable(

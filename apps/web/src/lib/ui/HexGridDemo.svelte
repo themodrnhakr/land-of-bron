@@ -8,7 +8,6 @@ interface TileData {
   q: number;
   r: number;
   nationId: number | null; // null represents Sea / Neutral
-  isCapital: boolean;
 }
 
 const NATION_COLORS = [
@@ -105,12 +104,11 @@ function generateLatticeMap(count: number): TileData[] {
     const centerQ = superPos.i * 2 + superPos.j * -1;
     const centerR = superPos.i * 1 + superPos.j * 3;
 
-    LOCAL_7_HEX.forEach((off, idx) => {
+    LOCAL_7_HEX.forEach((off) => {
       tiles.push({
         q: centerQ + off.q,
         r: centerR + off.r,
         nationId: id,
-        isCapital: idx === 0,
       });
     });
   }
@@ -134,10 +132,10 @@ function generateSpacedMap(count: number): TileData[] {
 
   // 1. Assign Nation Tiles
   activeCenters.forEach((center, id) => {
-    LOCAL_7_HEX.forEach((off, idx) => {
+    LOCAL_7_HEX.forEach((off) => {
       const q = center.q + off.q;
       const r = center.r + off.r;
-      map.set(`${q},${r}`, { q, r, nationId: id, isCapital: idx === 0 });
+      map.set(`${q},${r}`, { q, r, nationId: id });
     });
   });
 
@@ -149,7 +147,7 @@ function generateSpacedMap(count: number): TileData[] {
     for (let r = r1; r <= r2; r++) {
       const key = `${q},${r}`;
       if (!map.has(key)) {
-        map.set(key, { q, r, nationId: null, isCapital: false });
+        map.set(key, { q, r, nationId: null });
       }
     }
   }
@@ -159,7 +157,7 @@ function generateSpacedMap(count: number): TileData[] {
 
 // Strategy 3: Organic Voronoi Multi-Source BFS Growth
 function generateOrganicMap(count: number): TileData[] {
-  const SEED_CAPITALS = [
+  const SEEDS = [
     { q: 0, r: 0 },
     { q: 3, r: -1 },
     { q: 1, r: 3 },
@@ -172,13 +170,12 @@ function generateOrganicMap(count: number): TileData[] {
   const map = new Map<string, TileData>();
   const counts = new Array(count).fill(0);
 
-  // Set initial capitals
-  SEED_CAPITALS.forEach((cap, id) => {
-    map.set(`${cap.q},${cap.r}`, {
-      q: cap.q,
-      r: cap.r,
+  // Set initial seed tiles
+  SEEDS.forEach((seed, id) => {
+    map.set(`${seed.q},${seed.r}`, {
+      q: seed.q,
+      r: seed.r,
       nationId: id,
-      isCapital: true,
     });
     counts[id] = 1;
   });
@@ -206,16 +203,15 @@ function generateOrganicMap(count: number): TileData[] {
       }
 
       if (candidates.length > 0) {
-        // Sort candidates by closeness to capital to maintain coherent shapes
+        // Sort candidates by closeness to the seed tile to keep shapes coherent
         candidates.sort((a, b) =>
-          hexDistance(a, SEED_CAPITALS[id]) - hexDistance(b, SEED_CAPITALS[id])
+          hexDistance(a, SEEDS[id]) - hexDistance(b, SEEDS[id])
         );
         const chosen = candidates[0];
         map.set(`${chosen.q},${chosen.r}`, {
           q: chosen.q,
           r: chosen.r,
           nationId: id,
-          isCapital: false,
         });
         counts[id]++;
         growing = true;
@@ -231,7 +227,7 @@ function generateOrganicMap(count: number): TileData[] {
     for (let r = r1; r <= r2; r++) {
       const key = `${q},${r}`;
       if (!map.has(key)) {
-        map.set(key, { q, r, nationId: null, isCapital: false });
+        map.set(key, { q, r, nationId: null });
       }
     }
   }
@@ -245,7 +241,7 @@ function generateOrganicMap(count: number): TileData[] {
 // Takes a seeded rng so the layout is fully reproducible for a given seed.
 function generateRaggedMap(count: number, rng: () => number): TileData[] {
   // Tunable knobs:
-  const SEED_RING_DIST = 2; // distance of ring capitals from the center
+  const SEED_RING_DIST = 2; // distance of the seed ring from the center
   const TARGET = 7; // exact tiles per nation
   // Pick randomly among the closest N% of frontier cells each claim.
   // 0 = strictly closest (clean Voronoi), 1 = fully random (spaghetti).
@@ -268,18 +264,17 @@ function generateRaggedMap(count: number, rng: () => number): TileData[] {
     { q: 1, r: -1 },
   ];
 
-  const SEED_CAPITALS = [
+  const SEEDS = [
     { q: 0, r: 0 },
     ...RING_OFFSETS.map((o) => ({ q: o.q * SEED_RING_DIST, r: o.r * SEED_RING_DIST })),
   ].slice(0, count);
 
   const map = new Map<string, TileData>();
-  SEED_CAPITALS.forEach((cap, id) => {
-    map.set(`${cap.q},${cap.r}`, {
-      q: cap.q,
-      r: cap.r,
+  SEEDS.forEach((seed, id) => {
+    map.set(`${seed.q},${seed.r}`, {
+      q: seed.q,
+      r: seed.r,
       nationId: id,
-      isCapital: true,
     });
   });
   const counts = new Array<number>(count).fill(1);
@@ -338,7 +333,7 @@ function generateRaggedMap(count: number, rng: () => number): TileData[] {
     }
     if (bestId < 0) break;
 
-    const capital = SEED_CAPITALS[bestId]!;
+    const seed = SEEDS[bestId]!;
     // Filler-first: prefer cells that fill concave notches (2+ own neighbors)
     // over tip cells (1 neighbor) that would grow thin arms / peninsulas.
     // Tips only get claimed when no fillers remain, so shapes glob together.
@@ -346,7 +341,7 @@ function generateRaggedMap(count: number, rng: () => number): TileData[] {
     const fillers = candidates.filter((c) => c.own >= 2);
     if (fillers.length > 0) candidates = fillers;
     candidates.sort((a, b) =>
-      hexDistance(a, capital) - hexDistance(b, capital),
+      hexDistance(a, seed) - hexDistance(b, seed),
     );
     const poolSize = Math.max(1, Math.floor(candidates.length * NOISE_POOL_FRACTION));
     const chosen = candidates[Math.floor(rng() * poolSize)]!;
@@ -355,7 +350,6 @@ function generateRaggedMap(count: number, rng: () => number): TileData[] {
       q: chosen.q,
       r: chosen.r,
       nationId: bestId,
-      isCapital: false,
     });
     counts[bestId] = (counts[bestId] ?? 0) + 1;
   }
@@ -371,7 +365,7 @@ function generateRaggedMap(count: number, rng: () => number): TileData[] {
       const nr = tile.r + dir.r;
       const key = `${nq},${nr}`;
       if (!map.has(key) && !sea.has(key)) {
-        sea.set(key, { q: nq, r: nr, nationId: null, isCapital: false });
+        sea.set(key, { q: nq, r: nr, nationId: null });
       }
     }
   }
@@ -405,12 +399,12 @@ let tiles = $derived.by(() => {
     const nations = result.success;
     const gameTiles: TileData[] = [];
     nations.forEach((territory, nationId) => {
-      territory.forEach((c, idx) => {
-        gameTiles.push({ q: c.q, r: c.r, nationId, isCapital: idx === 0 });
+      territory.forEach((c) => {
+        gameTiles.push({ q: c.q, r: c.r, nationId });
       });
     });
     BoardGeneration.neutralCoords(nations).forEach((c) => {
-      gameTiles.push({ q: c.q, r: c.r, nationId: null, isCapital: false });
+      gameTiles.push({ q: c.q, r: c.r, nationId: null });
     });
     return gameTiles;
   }
@@ -465,7 +459,6 @@ let renderedTiles = $derived.by(() =>
       <button
         type="button"
         class="hex-tile"
-        class:is-capital={tile.isCapital}
         class:is-sea={tile.nationId === null}
         style="--q: {tile.q}; --r: {tile.r}; --bg: {styleObj.bg}; --border: {styleObj.border}"
         onmouseenter={() => {
@@ -474,11 +467,7 @@ let renderedTiles = $derived.by(() =>
         onmouseleave={() => (hoveredTile = null)}
       >
         <span class="coord-label">
-          {#if tile.isCapital}
-            ★
-          {:else}
-            {tile.q},{tile.r}
-          {/if}
+          {tile.q},{tile.r}
         </span>
       </button>
     {/each}
@@ -612,9 +601,7 @@ let renderedTiles = $derived.by(() =>
         <strong>Owner:</strong>
         {#if hoveredTile.nationId !== null}
           <span style="color: {NATION_COLORS[hoveredTile.nationId].bg}">
-            {NATION_COLORS[hoveredTile.nationId].name} {
-              hoveredTile.isCapital ? "(Capital)" : ""
-            }
+            {NATION_COLORS[hoveredTile.nationId].name}
           </span>
         {:else}
           <span style="color: #64748b">Neutral Sea</span>
@@ -851,11 +838,6 @@ input[type="range"] {
 
 .hex-tile.is-sea:hover {
   opacity: 0.8;
-}
-
-.hex-tile.is-capital {
-  box-shadow: 0 0 12px var(--bg);
-  border-width: 2px;
 }
 
 .coord-label {

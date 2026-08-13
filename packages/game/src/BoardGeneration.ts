@@ -41,7 +41,7 @@ export const generateCoordsOpts = Schema.Struct({
   noisePoolFraction: Schema.Number.pipe(Schema.withDecodingDefaultKey(
     Effect.succeed(0.35),
   )),
-  // Distance of ring capitals from the center (frontier strategy).
+  // Distance of the seed ring from the center (frontier strategy).
   seedRingDist: Schema.Number.pipe(Schema.withDecodingDefaultKey(
     Effect.succeed(2),
   )),
@@ -135,8 +135,7 @@ const STRATEGIES = {
  *   nation reached its target (raise `growthCap` or lower `target`).
  *
  * @param opts - Generation options; the defaulted fields are optional.
- * @returns The per-nation territories on success. The first tile of each
- *   territory is its capital.
+ * @returns The per-nation territories on success.
  */
 export const generateCoords = (
   opts: GenerateCoordsOpts,
