@@ -7,14 +7,20 @@ export * as Game from "./Game.ts";
 /** Game configuration and state schemas. */
 export * as State from "./State.ts";
 
-/** Shared board parts (tokens, ...). */
-export * as Parts from "./Parts.ts";
-
-/** Nation definitions (colors, tokens). */
+/** Nation definitions: identity, player zones, piece inventories. */
 export * as Nation from "./Nation.ts";
 
-/** Tile definitions & contents (color, terrain, control, coords). */
+/** Tile definitions & contents (geography + control). */
 export * as Tile from "./Tile.ts";
+
+/** Piece definitions: face literals, supply caps, placed-piece helpers. */
+export * as Pieces from "./Pieces.ts";
+
+/** Card catalog + schema. */
+export * as Cards from "./Cards.ts";
+
+/** Per-match setup configuration (boardgame.io setupData) + decoding. */
+export * as Setup from "./Setup.ts";
 
 /** Board generation: strategies, options, and errors. */
 export * as BoardGeneration from "./BoardGeneration.ts";
