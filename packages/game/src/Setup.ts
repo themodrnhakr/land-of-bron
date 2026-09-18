@@ -60,6 +60,7 @@ export const setupOptionsSchema = Schema.Struct({
   terrain: Schema.optional(landTerrainSchema),
   pieceLimits: Schema.optional(pieceLimitsOverrideSchema),
   nationNames: Schema.optional(Schema.Array(Schema.String)),
+  catalogVersion: Schema.optional(Schema.String),
 });
 
 /** What clients send — sparse, defaults applied on decode. */
@@ -75,6 +76,7 @@ export type ResolvedSetupOptions =
     readonly terrain: LandTerrain;
     readonly pieceLimits: PieceLimits;
     readonly nationNames: ReadonlyArray<string>;
+    readonly catalogVersion: string | undefined;
   };
 
 /** Options failed to decode (unknown strategy, bad terrain, ...). */
@@ -106,6 +108,7 @@ export const decodeSetupOptions = (
     terrain: o.terrain ?? DEFAULT_LAND_TERRAIN,
     pieceLimits: { ...PIECE_LIMITS, ...o.pieceLimits } as PieceLimits,
     nationNames: o.nationNames ?? DEFAULT_NATION_NAMES,
+    catalogVersion: o.catalogVersion,
   });
 };
 

@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import * as Coords from "./Coords.ts";
+import { actionBindingSchema } from "./Moves.ts";
 import { influenceFaces, makeSupply, PIECE_LIMITS, type PieceLimits, religionFaces, unitKinds } from "./Pieces.ts";
 
 // ============================================================================
@@ -15,16 +16,35 @@ export type Color = typeof colorSchema.Type;
 // ============================================================================
 
 /**
- * The player mat: 3 card slots (a list of card ids, at most 3) plus one slot
- * per domain. Layout TBD — slots hold card ids until the rules define them.
+ * The player mat: 3 card slots (a list of card ids) plus one slot per domain,
+ * each holding an optional chit. Slots are built from the catalog's domains
+ * at setup.
  */
 export const matSchema = Schema.Struct({
   cards: Schema.Array(Schema.String),
-  religion: Schema.optional(Schema.String),
-  politics: Schema.optional(Schema.String),
-  economy: Schema.optional(Schema.String),
+  slots: Schema.Array(Schema.Struct({
+    domain: Schema.String,
+    chit: Schema.optional(Schema.String),
+  })),
 });
 export type Mat = typeof matSchema.Type;
+
+// ============================================================================
+// Chits
+// ============================================================================
+
+/**
+ * A chit: sits in a mat slot, selects a mandate row, and carries powers.
+ * Chits are explicitly nation-mat pieces, so they live with the nation.
+ */
+export const chitSchema = Schema.Struct({
+  id: Schema.String,
+  domain: Schema.String, // which mat slot it occupies (lint)
+  subtype: Schema.String, // selects the mandate row (lint)
+  description: Schema.String,
+  powers: Schema.Array(actionBindingSchema),
+});
+export type Chit = typeof chitSchema.Type;
 
 // ============================================================================
 // Nation = player seat
@@ -40,11 +60,14 @@ export const nationSchema = Schema.Struct({
   color: colorSchema,
   name: Schema.String,
 
-  // --- off-board zones ---
-  hand: Schema.Array(Schema.String), // card ids
+  // --- off-board zones (card ids) ---
+  hand: Schema.Array(Schema.String),
   deck: Schema.Array(Schema.String),
+  discard: Schema.Array(Schema.String),
+  playArea: Schema.Array(Schema.String), // played cards; cleared at end of turn
+  mandates: Schema.Array(Schema.String), // private mandate holdings
   mat: matSchema,
-  score: Schema.Number,
+  score: Schema.Number, // bonus VP from non-mandate sources (mandate VP is derived)
 
   // --- limited physical pieces: the array IS the supply ---
   influence: Schema.Array(Schema.Struct({
@@ -96,11 +119,12 @@ export const makeNation = (
   name,
   hand: [],
   deck: [],
+  discard: [],
+  playArea: [],
+  mandates: [],
   mat: {
     cards: [],
-    religion: undefined,
-    politics: undefined,
-    economy: undefined,
+    slots: [],
   },
   score: 0,
   influence: makeSupply(limits.influence, { face: "influence" }),

@@ -1,6 +1,11 @@
 import { type Game } from "boardgame.io";
 import { Context, Effect, Layer, Result } from "effect";
-import { BoardGeneration, Nation, Setup, State, Tile } from ".";
+import * as BoardGeneration from "./BoardGeneration.ts";
+import * as Cards from "./Cards.ts";
+import * as Nation from "./Nation.ts";
+import * as Setup from "./Setup.ts";
+import * as State from "./State.ts";
+import * as Tile from "./Tile.ts";
 
 // The palette for up to 7 nations (matches the generator's structural cap).
 const NATION_COLORS = ["red", "orange", "yellow", "green", "blue", "indigo", "violet"] as const;
@@ -9,9 +14,12 @@ export class Service extends Context.Service<Service, {
   readonly make: (config: State.Config) => Game<State.State, {}, Setup.SetupOptions>;
 }>()("GameService") {}
 
-export const ServiceDev = Layer.effect(
+/** The game service, requiring a `CardCatalog` (provide it, or use `ServiceDev`). */
+export const ServiceLive = Layer.effect(
   Service,
   Effect.gen(function*() {
+    const cards = yield* Cards.CardCatalog;
+
     const make = (config: State.Config): Game<State.State, {}, Setup.SetupOptions> => ({
       name: config.name,
       minPlayers: config.minPlayers,
@@ -49,20 +57,31 @@ export const ServiceDev = Layer.effect(
           ),
           ...BoardGeneration.neutralCoords(result.success).map((c) => Tile.fromCoords(c, undefined, "sea")),
         ];
-        // 3. One nation per player, with the configured supplies and names.
-        const nations = Array.from({ length: ctx.numPlayers }, (_, id) =>
-          Nation.makeNation(
+        // 3. One nation per player, with the configured supplies and names, and
+        //    a mat slot per catalog domain.
+        const slots = cards.catalog.domains.map((d) => ({ domain: d.id }));
+        const nations = Array.from({ length: ctx.numPlayers }, (_, id) => {
+          const nation = Nation.makeNation(
             NATION_COLORS[id]!,
             opts.nationNames[id] ?? "Nation " + (id + 1),
             opts.pieceLimits,
-          ));
-        // 4. Wire up state.
-        return State.make(tiles, nations);
+          );
+          return { ...nation, mat: { ...nation.mat, slots } };
+        });
+        // 4. Wire up state, pinned to the loaded catalog.
+        return State.make(tiles, nations, {
+          version: cards.catalog.version,
+          hash: cards.hash,
+        });
       },
     });
 
-    return {
-      make,
-    };
+    return { make };
   }),
+);
+
+/** Dev layer: the game service with an empty catalog. */
+export const ServiceDev = Layer.provide(
+  ServiceLive,
+  Cards.CardCatalogFixture(Cards.emptyCatalog),
 );

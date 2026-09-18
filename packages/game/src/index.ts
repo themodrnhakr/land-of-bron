@@ -19,6 +19,12 @@ export * as Pieces from "./Pieces.ts";
 /** Card catalog + schema. */
 export * as Cards from "./Cards.ts";
 
+/** Code-side move definitions and mandate check predicates. */
+export * as Moves from "./Moves.ts";
+
+/** Victory-point and mandate scoring selectors. */
+export * as Scoring from "./Scoring.ts";
+
 /** Per-match setup configuration (boardgame.io setupData) + decoding. */
 export * as Setup from "./Setup.ts";
 
