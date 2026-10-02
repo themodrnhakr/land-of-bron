@@ -1,7 +1,7 @@
 import { Array, Effect, HashSet, Option, Result, Schema } from "effect";
 import * as Coords from "./Coords.ts";
 import type { Color } from "./Nation.ts";
-import type { Phase, State } from "./State.ts";
+import type { GameEvent, Phase, State } from "./State.ts";
 import type { Tile } from "./Tile.ts";
 
 // ============================================================================
@@ -68,10 +68,16 @@ export interface MoveContext {
   readonly actor: Color; // the nation performing the move
   readonly turn: number; // the boardgame.io turn counter (ctx.turn)
   readonly phase: Phase; // the boardgame.io phase (ctx.phase)
+  /** The in-flight event, set only while applying an interrupt reaction. */
+  readonly pendingEvent?: GameEvent;
 }
 
 export interface MoveOutcome {
   readonly state: State;
+  /** An interrupt reaction may veto the in-flight event (D13). */
+  readonly veto?: boolean;
+  /** An interrupt reaction may replace the in-flight event (D13). */
+  readonly event?: GameEvent;
 }
 
 /**

@@ -9,9 +9,10 @@ import { MOVES } from "./Moves.ts";
 import * as Nation from "./Nation.ts";
 import { type Color, colorSchema } from "./Nation.ts";
 import * as Random from "./Random.ts";
+import * as Reactions from "./Reactions.ts";
 import * as Setup from "./Setup.ts";
 import * as State from "./State.ts";
-import { type GameEvent, type Phase, State as GameState } from "./State.ts";
+import { type GameEvent, type PendingReactions, type Phase, State as GameState } from "./State.ts";
 import * as Terrain from "./Terrain.ts";
 import * as Tile from "./Tile.ts";
 import * as View from "./View.ts";
@@ -37,39 +38,100 @@ const eventTarget = (params: unknown): Option.Option<Color> => {
 };
 
 /**
- * Append the move's `GameEvent` to the replayable log (Phase 3 step 2). Every
- * successful move goes through here, so `state.events` is complete by
- * construction — mandates and reactions both read it.
+ * Build the move's `GameEvent` **without** applying it, so an interrupt window
+ * can resolve before the effect lands (D13).
  */
-const appendEvent = (
+const makeEvent = (
   state: State.State,
   name: string,
   def: MoveMetadata,
   actor: Color,
   turn: number,
   params: unknown,
+): GameEvent => ({
+  seq: state.events.length,
+  move: name,
+  categories: [...def.categories],
+  tags: [...(def.tags ?? [])],
+  actor,
+  at: eventAt(params),
+  target: eventTarget(params),
+  params: toParamRecord(params),
+  turn,
+});
+
+// ----------------------------------------------------------------------------
+// Reaction windows in the bridge (D13)
+// ----------------------------------------------------------------------------
+
+const withWindow = (state: State.State, window: PendingReactions): State.State =>
+  new GameState({ ...state, pendingReactions: Option.some(window) });
+
+const clearWindow = (state: State.State): State.State => new GameState({ ...state, pendingReactions: Option.none() });
+
+/**
+ * Resolve the open window when every eligible player has acted. Interrupt:
+ * fold, then (unless vetoed) apply + log the event and open the trigger
+ * window. Trigger: fire, then clear. Reactions are terminal (D13).
+ */
+const resolveIfComplete = (
+  state: State.State,
+  catalog: Cards.Catalog,
+  moves: Reactions.MovesRegistry,
 ): State.State => {
-  const event: GameEvent = {
-    seq: state.events.length,
-    move: name,
-    categories: [...def.categories],
-    tags: [...(def.tags ?? [])],
-    actor,
-    at: eventAt(params),
-    target: eventTarget(params),
-    params: toParamRecord(params),
-    turn,
-  };
-  return new GameState({ ...state, events: [...state.events, event] });
+  if (Option.isNone(state.pendingReactions)) return state;
+  const window = state.pendingReactions.value;
+  if (!Reactions.isComplete(window)) return state;
+  if (window.phase === "interrupt") {
+    const interrupt = Reactions.resolveInterrupt(state, window, moves);
+    if (interrupt.vetoed) return clearWindow(state);
+    const applied = Reactions.applyEvent(interrupt.state, interrupt.event, moves);
+    const logged = Reactions.logEvent(applied, interrupt.event);
+    const trigger = Reactions.openWindow(logged, catalog, interrupt.event, "trigger", moves);
+    return Option.isSome(trigger) ? withWindow(logged, trigger.value) : clearWindow(logged);
+  }
+  return clearWindow(Reactions.resolveTrigger(state, window, moves));
 };
 
 /**
- * Turn one `MoveDefinition` into a boardgame.io long-form move. There is no
- * `validateMove` field in boardgame.io 0.50, so `canApply` is consulted inside
- * the move body and `INVALID_MOVE` is returned when it (or param decoding)
- * fails. `G` is decoded on the way in and re-encoded on the way out (D40).
+ * Run a move: propose its event, open the interrupt window if anyone can react
+ * (suspending without applying), otherwise apply + log and open the trigger
+ * window if anyone can react.
  */
-const buildMove = (name: string, def: MoveDefinition<never>): LongFormMove<State.StateEncoded, {}> => ({
+const runMove = (
+  state: State.State,
+  name: string,
+  def: MoveDefinition<any>,
+  actor: Color,
+  params: unknown,
+  catalog: Cards.Catalog,
+  moves: Reactions.MovesRegistry,
+  turn: number,
+  phase: Phase,
+): State.State => {
+  const event = makeEvent(state, name, def, actor, turn, params);
+  const interrupt = Reactions.openWindow(state, catalog, event, "interrupt", moves);
+  if (Option.isSome(interrupt)) return withWindow(state, interrupt.value);
+  const applied = def.apply({ state, actor, turn, phase }, params as never);
+  if (Result.isFailure(applied)) return state;
+  const logged = Reactions.logEvent(applied.success.state, event);
+  const trigger = Reactions.openWindow(logged, catalog, event, "trigger", moves);
+  return Option.isSome(trigger) ? withWindow(logged, trigger.value) : clearWindow(logged);
+};
+
+/**
+ * Turn one game `MoveDefinition` into a boardgame.io long-form move. There is
+ * no `validateMove` field in boardgame.io 0.50, so `canApply` is consulted
+ * inside the move body and `INVALID_MOVE` is returned when it (or param
+ * decoding) fails. `G` is decoded on the way in and re-encoded on the way out
+ * (D40).
+ */
+const buildMove = (
+  name: string,
+  def: MoveDefinition<any>,
+  catalog: Cards.Catalog,
+  moves: Reactions.MovesRegistry,
+): LongFormMove<State.StateEncoded, {}> => ({
   move: ({ G, ctx, playerID }, ...args) => {
     const state = State.decodeUnknown(G);
     const actor = View.colorForPlayerId(state, playerID ?? null);
@@ -77,20 +139,95 @@ const buildMove = (name: string, def: MoveDefinition<never>): LongFormMove<State
     const decoded = Schema.decodeUnknownResult(def.params)(args[0] ?? {});
     if (Result.isFailure(decoded)) return INVALID_MOVE;
     const params = decoded.success;
-    const moveCtx: MoveContext = { state, actor, turn: ctx.turn, phase: ctx.phase as Phase };
-    const legal = def.canApply(moveCtx, params);
+    const phase = ctx.phase as Phase;
+    const legal = def.canApply({ state, actor, turn: ctx.turn, phase }, params);
     if (Result.isFailure(legal) || !legal.success) return INVALID_MOVE;
-    const applied = def.apply(moveCtx, params);
-    if (Result.isFailure(applied)) return INVALID_MOVE;
-    return State.encode(appendEvent(applied.success.state, name, def, actor, ctx.turn, params));
+    return State.encode(runMove(state, name, def, actor, params, catalog, moves, ctx.turn, phase));
   },
 });
 
-/** The boardgame.io move map built from the code-side `MOVES` registry. */
-export const buildMoves = (moves: typeof MOVES): MoveMap<State.StateEncoded, {}> => {
+/** A system move (declare/pass a reaction): no event, no window of its own. */
+const buildSystemMove = (def: MoveDefinition<any>): LongFormMove<State.StateEncoded, {}> => ({
+  move: ({ G, ctx, playerID }, ...args) => {
+    const state = State.decodeUnknown(G);
+    const actor = View.colorForPlayerId(state, playerID ?? null);
+    if (actor === null) return INVALID_MOVE;
+    const decoded = Schema.decodeUnknownResult(def.params)(args[0] ?? {});
+    if (Result.isFailure(decoded)) return INVALID_MOVE;
+    const phase = ctx.phase as Phase;
+    const legal = def.canApply({ state, actor, turn: ctx.turn, phase }, decoded.success);
+    if (Result.isFailure(legal) || !legal.success) return INVALID_MOVE;
+    const applied = def.apply({ state, actor, turn: ctx.turn, phase }, decoded.success);
+    if (Result.isFailure(applied)) return INVALID_MOVE;
+    return State.encode(applied.success.state);
+  },
+});
+
+/** The two system moves that operate on an open window. */
+export const buildSystemMoves = (
+  catalog: Cards.Catalog,
+  moves: Reactions.MovesRegistry,
+): Record<string, MoveDefinition<any>> => ({
+  declareReaction: {
+    categories: ["react"],
+    params: Schema.Struct({
+      move: Schema.String,
+      params: Schema.Record(Schema.String, Schema.Unknown),
+    }),
+    canApply: (ctx, p) =>
+      Result.succeed(
+        Option.isSome(ctx.state.pendingReactions)
+          && ctx.state.pendingReactions.value.eligible.includes(ctx.actor)
+          && !ctx.state.pendingReactions.value.declarations.some((d) => d.actor === ctx.actor)
+          && Object.hasOwn(moves, p.move),
+      ),
+    apply: (ctx, p) => {
+      if (Option.isNone(ctx.state.pendingReactions)) return Result.succeed({ state: ctx.state });
+      const declared = Reactions.declare(
+        ctx.state.pendingReactions.value,
+        ctx.actor,
+        p.move,
+        p.params,
+        ctx.state.events.length + ctx.state.pendingReactions.value.declarations.length,
+        moves,
+      );
+      if (Result.isFailure(declared)) return Result.succeed({ state: ctx.state });
+      return Result.succeed({ state: resolveIfComplete(withWindow(ctx.state, declared.success), catalog, moves) });
+    },
+  },
+  passReaction: {
+    categories: ["react"],
+    params: Schema.Struct({}),
+    canApply: (ctx) =>
+      Result.succeed(
+        Option.isSome(ctx.state.pendingReactions)
+          && ctx.state.pendingReactions.value.eligible.includes(ctx.actor)
+          && !ctx.state.pendingReactions.value.declarations.some((d) => d.actor === ctx.actor)
+          && !ctx.state.pendingReactions.value.passed.includes(ctx.actor),
+      ),
+    apply: (ctx) => {
+      if (Option.isNone(ctx.state.pendingReactions)) return Result.succeed({ state: ctx.state });
+      const passed = Reactions.pass(ctx.state.pendingReactions.value, ctx.actor);
+      if (Result.isFailure(passed)) return Result.succeed({ state: ctx.state });
+      return Result.succeed({ state: resolveIfComplete(withWindow(ctx.state, passed.success), catalog, moves) });
+    },
+  },
+});
+
+/**
+ * The boardgame.io move map: the game's registry plus the reaction system
+ * moves. Reaction-card moves are reachable only through `declareReaction`.
+ */
+export const buildMoves = (
+  moves: Record<string, MoveDefinition<any>>,
+  catalog: Cards.Catalog,
+): MoveMap<State.StateEncoded, {}> => {
   const out: Record<string, LongFormMove<State.StateEncoded, {}>> = {};
   for (const [name, def] of Object.entries(moves)) {
-    out[name] = buildMove(name, def as unknown as MoveDefinition<never>);
+    out[name] = buildMove(name, def, catalog, moves);
+  }
+  for (const [name, def] of Object.entries(buildSystemMoves(catalog, moves))) {
+    out[name] = buildSystemMove(def);
   }
   return out;
 };
@@ -205,8 +342,9 @@ export const ServiceLive = Layer.effect(
           ),
         );
       },
-      // 5. Moves: the whole code-side registry, bridged to boardgame.io.
-      moves: buildMoves(MOVES),
+      // 5. Moves: the whole code-side registry plus the reaction system moves,
+      //    bridged to boardgame.io.
+      moves: buildMoves(MOVES as unknown as Record<string, MoveDefinition<any>>, cards.catalog),
       // 6. Turn/phase: a single "action" phase, one move per turn, and the
       //    end-of-turn playArea cleanup in `onEnd`. The concrete move counts
       //    are a Phase 4 rules question.

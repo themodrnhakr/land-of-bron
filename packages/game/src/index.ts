@@ -16,6 +16,9 @@ export * as Tile from "./Tile.ts";
 /** Per-viewer state redaction for boardgame.io `playerView` (D11). */
 export * as View from "./View.ts";
 
+/** Pure reaction engine: windows, declarations, interrupt/trigger resolution (D13). */
+export * as Reactions from "./Reactions.ts";
+
 /** Piece definitions: face literals, supply caps, placed-piece helpers. */
 export * as Pieces from "./Pieces.ts";
 

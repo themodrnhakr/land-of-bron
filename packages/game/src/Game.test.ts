@@ -30,7 +30,12 @@ describe("Game assembly (Phase 3)", () => {
   test("builds a playable Game with the expected top-level shape", () => {
     const game = build();
     expect(game.name).toBe("LandOfBronTest");
-    expect(Object.keys(game.moves ?? {}).sort()).toEqual(["counterAttack", "pass"]);
+    expect(Object.keys(game.moves ?? {}).sort()).toEqual([
+      "counterAttack",
+      "declareReaction",
+      "pass",
+      "passReaction",
+    ]);
     expect(game.turn?.maxMoves).toBe(1);
     expect(game.phases?.["action"]?.start).toBe(true);
     expect(typeof game.playerView).toBe("function");

@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 import * as Coords from "./Coords.ts";
 import { moveCategorySchema, tagSchema } from "./Moves.ts";
 import { colorSchema, type Nation, nationSchema } from "./Nation.ts";
@@ -60,6 +60,41 @@ export const terrainPinSchema = Schema.Struct({
 });
 export type TerrainPin = typeof terrainPinSchema.Type;
 
+// ============================================================================
+// Reaction windows (D13)
+// ============================================================================
+
+/** The two reaction windows: pre-effect interrupt, then post-effect trigger. */
+export const reactionPhaseSchema = Schema.Literals(["interrupt", "trigger"]);
+export type ReactionPhase = typeof reactionPhaseSchema.Type;
+
+/**
+ * One public declaration in a window. `seq` reuses the event sequence for a
+ * monotonic timestamp; a declaration is public the moment it is made.
+ */
+export const reactionDeclarationSchema = Schema.Struct({
+  seq: Schema.Number,
+  actor: colorSchema,
+  move: Schema.String, // registry key of the react move
+  params: Schema.Record(Schema.String, Schema.Unknown),
+});
+export type ReactionDeclaration = typeof reactionDeclarationSchema.Type;
+
+/**
+ * The single open reaction window (D13): the in-flight event, its phase, the
+ * eligible reactors in resolution order (target first, then seat order), the
+ * public declarations so far, and who has passed. `None` on `State` means no
+ * window is open and no suspension is pending.
+ */
+export const pendingReactionsSchema = Schema.Struct({
+  event: gameEventSchema,
+  phase: reactionPhaseSchema,
+  eligible: Schema.Array(colorSchema),
+  declarations: Schema.Array(reactionDeclarationSchema),
+  passed: Schema.Array(colorSchema),
+});
+export type PendingReactions = typeof pendingReactionsSchema.Type;
+
 /**
  * The whole game: the board (tiles, land + sea) and one nation per player
  * (indexed by playerID), the event log, and the pinned catalog + terrain.
@@ -72,6 +107,8 @@ export class State extends Schema.TaggedClass<State>()("State", {
   events: Schema.Array(gameEventSchema),
   catalog: catalogPinSchema,
   terrain: terrainPinSchema,
+  // No open reaction window by default (D13).
+  pendingReactions: Schema.OptionFromOptional(pendingReactionsSchema),
 }) {}
 
 // ============================================================================
@@ -84,7 +121,7 @@ export const make = (
   nations: Nation[],
   catalog: CatalogPin,
   terrain: TerrainPin,
-): State => new State({ tiles, nations, events: [], catalog, terrain });
+): State => new State({ tiles, nations, events: [], catalog, terrain, pendingReactions: Option.none() });
 
 // ============================================================================
 // Framework boundary (D40)
