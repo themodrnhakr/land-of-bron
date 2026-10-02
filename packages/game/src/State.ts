@@ -85,3 +85,21 @@ export const make = (
   catalog: CatalogPin,
   terrain: TerrainPin,
 ): State => new State({ tiles, nations, events: [], catalog, terrain });
+
+// ============================================================================
+// Framework boundary (D40)
+// ============================================================================
+//
+// boardgame.io requires `G` to be plain JSON (it runs a serializability check on
+// every hook result), while the engine works with the decoded `Type` form
+// (`Option` fields, etc.). `setup`, moves and `playerView` therefore encode on
+// the way out and decode on the way in.
+
+/** The wire/JSON form stored in `G` (absent keys instead of `None`). */
+export type StateEncoded = Schema.Codec.Encoded<typeof State>;
+
+/** Decoded `G` -> plain JSON `G`. */
+export const encode = (state: State): StateEncoded => Schema.encodeSync(State)(state);
+
+/** Plain JSON `G` (or any unknown) -> decoded `G`. */
+export const decodeUnknown = (input: unknown): State => Schema.decodeUnknownSync(State)(input);

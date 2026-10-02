@@ -13,6 +13,9 @@ export * as Nation from "./Nation.ts";
 /** Tile definitions & contents (geography + control). */
 export * as Tile from "./Tile.ts";
 
+/** Per-viewer state redaction for boardgame.io `playerView` (D11). */
+export * as View from "./View.ts";
+
 /** Piece definitions: face literals, supply caps, placed-piece helpers. */
 export * as Pieces from "./Pieces.ts";
 

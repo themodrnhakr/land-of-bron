@@ -1,7 +1,7 @@
 import { Effect, HashSet, Result, Schema } from "effect";
 import * as Coords from "./Coords.ts";
 import type { Color } from "./Nation.ts";
-import type { State } from "./State.ts";
+import type { Phase, State } from "./State.ts";
 
 // ============================================================================
 // Move categories
@@ -65,11 +65,21 @@ export type MoveError =
 export interface MoveContext {
   readonly state: State;
   readonly actor: Color; // the nation performing the move
-  readonly turn: number;
+  readonly turn: number; // the boardgame.io turn counter (ctx.turn)
+  readonly phase: Phase; // the boardgame.io phase (ctx.phase)
 }
 
 export interface MoveOutcome {
   readonly state: State;
+}
+
+/**
+ * The metadata every move carries: how it is invoked (`categories`) and what
+ * event kinds its emitted `GameEvent` carries (`tags`).
+ */
+export interface MoveMetadata {
+  readonly categories: ReadonlyArray<MoveCategoryId>;
+  readonly tags?: ReadonlyArray<Tag>;
 }
 
 /**
@@ -81,9 +91,7 @@ export interface MoveOutcome {
  * - `tags` — the event kinds the move's emitted `GameEvent` carries.
  * - `respondsTo` — the event kinds this move reacts to (set on react moves).
  */
-export interface MoveDefinition<P> {
-  readonly categories: ReadonlyArray<MoveCategoryId>;
-  readonly tags?: ReadonlyArray<Tag>;
+export interface MoveDefinition<P> extends MoveMetadata {
   readonly respondsTo?: ReadonlyArray<Tag>;
   readonly params: Schema.ConstraintDecoder<P>;
   readonly canApply: (ctx: MoveContext, p: P) => Result.Result<boolean, MoveError>;

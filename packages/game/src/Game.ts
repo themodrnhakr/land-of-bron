@@ -1,19 +1,118 @@
-import { type Game } from "boardgame.io";
-import { Context, Effect, Layer, Option, Result } from "effect";
+import { type LongFormMove, type MoveMap } from "boardgame.io";
+import { INVALID_MOVE } from "boardgame.io/core";
+import { Context, Effect, Layer, Option, Result, Schema } from "effect";
 import * as BoardGeneration from "./BoardGeneration.ts";
 import * as Cards from "./Cards.ts";
+import * as Coords from "./Coords.ts";
+import type { MoveContext, MoveDefinition, MoveMetadata } from "./Moves.ts";
+import { MOVES } from "./Moves.ts";
 import * as Nation from "./Nation.ts";
+import { type Color, colorSchema } from "./Nation.ts";
 import * as Random from "./Random.ts";
 import * as Setup from "./Setup.ts";
 import * as State from "./State.ts";
+import { type GameEvent, type Phase, State as GameState } from "./State.ts";
 import * as Terrain from "./Terrain.ts";
 import * as Tile from "./Tile.ts";
+import * as View from "./View.ts";
 
 // The palette for up to 7 nations (matches the generator's structural cap).
 const NATION_COLORS = ["red", "orange", "yellow", "green", "blue", "indigo", "violet"] as const;
 
+// ============================================================================
+// Move bridge (registries -> boardgame.io `moves`)
+// ============================================================================
+
+const toParamRecord = (params: unknown): Record<string, unknown> =>
+  typeof params === "object" && params !== null ? params as Record<string, unknown> : {};
+
+const eventAt = (params: unknown): Option.Option<Coords.Coords> => {
+  const decoded = Schema.decodeUnknownResult(Coords.coordsSchema)(toParamRecord(params).at);
+  return Result.isFailure(decoded) ? Option.none() : Option.some(decoded.success);
+};
+
+const eventTarget = (params: unknown): Option.Option<Color> => {
+  const decoded = Schema.decodeUnknownResult(colorSchema)(toParamRecord(params).target);
+  return Result.isFailure(decoded) ? Option.none() : Option.some(decoded.success);
+};
+
+/**
+ * Append the move's `GameEvent` to the replayable log (Phase 3 step 2). Every
+ * successful move goes through here, so `state.events` is complete by
+ * construction — mandates and reactions both read it.
+ */
+const appendEvent = (
+  state: State.State,
+  name: string,
+  def: MoveMetadata,
+  actor: Color,
+  turn: number,
+  params: unknown,
+): State.State => {
+  const event: GameEvent = {
+    seq: state.events.length,
+    move: name,
+    categories: [...def.categories],
+    tags: [...(def.tags ?? [])],
+    actor,
+    at: eventAt(params),
+    target: eventTarget(params),
+    params: toParamRecord(params),
+    turn,
+  };
+  return new GameState({ ...state, events: [...state.events, event] });
+};
+
+/**
+ * Turn one `MoveDefinition` into a boardgame.io long-form move. There is no
+ * `validateMove` field in boardgame.io 0.50, so `canApply` is consulted inside
+ * the move body and `INVALID_MOVE` is returned when it (or param decoding)
+ * fails. `G` is decoded on the way in and re-encoded on the way out (D40).
+ */
+const buildMove = (name: string, def: MoveDefinition<never>): LongFormMove<State.StateEncoded, {}> => ({
+  move: ({ G, ctx, playerID }, ...args) => {
+    const state = State.decodeUnknown(G);
+    const actor = View.colorForPlayerId(state, playerID ?? null);
+    if (actor === null) return INVALID_MOVE;
+    const decoded = Schema.decodeUnknownResult(def.params)(args[0] ?? {});
+    if (Result.isFailure(decoded)) return INVALID_MOVE;
+    const params = decoded.success;
+    const moveCtx: MoveContext = { state, actor, turn: ctx.turn, phase: ctx.phase as Phase };
+    const legal = def.canApply(moveCtx, params);
+    if (Result.isFailure(legal) || !legal.success) return INVALID_MOVE;
+    const applied = def.apply(moveCtx, params);
+    if (Result.isFailure(applied)) return INVALID_MOVE;
+    return State.encode(appendEvent(applied.success.state, name, def, actor, ctx.turn, params));
+  },
+});
+
+/** The boardgame.io move map built from the code-side `MOVES` registry. */
+export const buildMoves = (moves: typeof MOVES): MoveMap<State.StateEncoded, {}> => {
+  const out: Record<string, LongFormMove<State.StateEncoded, {}>> = {};
+  for (const [name, def] of Object.entries(moves)) {
+    out[name] = buildMove(name, def as unknown as MoveDefinition<never>);
+  }
+  return out;
+};
+
+// ============================================================================
+// Turn / phase config
+// ============================================================================
+
+/** End-of-turn cleanup: every nation's `playArea` is cleared. */
+const clearPlayAreas = (state: State.StateEncoded): State.StateEncoded => ({
+  ...state,
+  nations: state.nations.map((nation) => ({ ...nation, playArea: [] })),
+});
+
+// ============================================================================
+// Service
+// ============================================================================
+
 export class Service extends Context.Service<Service, {
-  readonly make: (config: State.Config) => Game<State.State, {}, Setup.SetupOptions>;
+  readonly make: (
+    config: State.Config,
+  ) => import("boardgame.io").Game<State.StateEncoded, {}, Setup.SetupOptions>;
 }>()("GameService") {}
 
 /** The game service, requiring a `CardCatalog` and a `TerrainCatalog`. */
@@ -23,7 +122,9 @@ export const ServiceLive = Layer.effect(
     const cards = yield* Cards.CardCatalog;
     const terrain = yield* Terrain.TerrainCatalog;
 
-    const make = (config: State.Config): Game<State.State, {}, Setup.SetupOptions> => ({
+    const make = (
+      config: State.Config,
+    ): import("boardgame.io").Game<State.StateEncoded, {}, Setup.SetupOptions> => ({
       name: config.name,
       minPlayers: config.minPlayers,
       maxPlayers: config.maxPlayers,
@@ -40,7 +141,9 @@ export const ServiceLive = Layer.effect(
         }
         const opts = decoded.success;
         // 1. Generate the board from the resolved options. Seats come from
-        //    match creation (ctx.numPlayers), never from setup data.
+        //    match creation (ctx.numPlayers), never from setup data. The layout
+        //    stays seeded from `setupData.seed`, not the `random` plugin, so a
+        //    match is reproducible from one number (D29/D40).
         const result = BoardGeneration.generateCoords({
           playerCount: ctx.numPlayers,
           strategy: opts.strategy,
@@ -58,9 +161,7 @@ export const ServiceLive = Layer.effect(
         //    randomly on its coords. The pool must cover the target.
         const poolSize = Terrain.terrainPoolSize(terrain);
         if (poolSize < opts.target) {
-          throw new Error(
-            `terrain pool (${poolSize}) is smaller than target (${opts.target})`,
-          );
+          throw new Error(`terrain pool (${poolSize}) is smaller than target (${opts.target})`);
         }
         const colors = NATION_COLORS.slice(0, ctx.numPlayers);
         const tiles: Tile.Tile[] = [];
@@ -93,13 +194,38 @@ export const ServiceLive = Layer.effect(
           );
           return { ...nation, mat: { ...nation.mat, slots } };
         });
-        // 4. Wire up state, pinned to the loaded catalog and terrain config.
-        return State.make(
-          tiles,
-          nations,
-          { version: cards.catalog.version, hash: cards.hash },
-          terrain.pin,
+        // 4. Wire up state, pinned to the loaded catalog and terrain config,
+        //    and encode it to the framework's plain-JSON form (D40).
+        return State.encode(
+          State.make(
+            tiles,
+            nations,
+            { version: cards.catalog.version, hash: cards.hash },
+            terrain.pin,
+          ),
         );
+      },
+      // 5. Moves: the whole code-side registry, bridged to boardgame.io.
+      moves: buildMoves(MOVES),
+      // 6. Turn/phase: a single "action" phase, one move per turn, and the
+      //    end-of-turn playArea cleanup in `onEnd`. The concrete move counts
+      //    are a Phase 4 rules question.
+      phases: {
+        action: { start: true },
+      },
+      turn: {
+        minMoves: 0,
+        maxMoves: 1,
+        onEnd: ({ G }) => clearPlayAreas(G),
+      },
+      // 7. Win condition: mandates do NOT end the game (D6/D11). The real
+      //    end-of-game trigger is undecided (open question 8), so this hook is
+      //    the seam and currently never ends the game.
+      endIf: () => undefined,
+      // 8. Hidden information (D11): redact per viewer, then re-encode (D40).
+      playerView: ({ G, playerID }) => {
+        const state = State.decodeUnknown(G);
+        return State.encode(View.redactForViewer(state, View.colorForPlayerId(state, playerID)));
       },
     });
 
@@ -115,3 +241,12 @@ export const ServiceDev = Layer.provide(
     Terrain.TerrainCatalogFixture(Terrain.DEFAULT_TERRAIN_TABLE),
   ),
 );
+
+/** Build a game directly from the dev layer (tests, tooling). */
+export const makeDevGame = (config: State.Config) => {
+  const program = Effect.gen(function*() {
+    const service = yield* Service;
+    return service.make(config);
+  });
+  return Effect.runSync(Effect.provide(program, ServiceDev));
+};
