@@ -1,10 +1,12 @@
 import { type Game } from "boardgame.io";
-import { Context, Effect, Layer, Result } from "effect";
+import { Context, Effect, Layer, Option, Result } from "effect";
 import * as BoardGeneration from "./BoardGeneration.ts";
 import * as Cards from "./Cards.ts";
 import * as Nation from "./Nation.ts";
+import * as Random from "./Random.ts";
 import * as Setup from "./Setup.ts";
 import * as State from "./State.ts";
+import * as Terrain from "./Terrain.ts";
 import * as Tile from "./Tile.ts";
 
 // The palette for up to 7 nations (matches the generator's structural cap).
@@ -14,11 +16,12 @@ export class Service extends Context.Service<Service, {
   readonly make: (config: State.Config) => Game<State.State, {}, Setup.SetupOptions>;
 }>()("GameService") {}
 
-/** The game service, requiring a `CardCatalog` (provide it, or use `ServiceDev`). */
+/** The game service, requiring a `CardCatalog` and a `TerrainCatalog`. */
 export const ServiceLive = Layer.effect(
   Service,
   Effect.gen(function*() {
     const cards = yield* Cards.CardCatalog;
+    const terrain = yield* Terrain.TerrainCatalog;
 
     const make = (config: State.Config): Game<State.State, {}, Setup.SetupOptions> => ({
       name: config.name,
@@ -50,29 +53,53 @@ export const ServiceLive = Layer.effect(
         if (result._tag === "Failure") {
           throw new Error("Board generation failed: " + result.failure._tag);
         }
-        // 2. Land tiles (with the configured terrain) + sea tiles.
-        const tiles: Tile.Tile[] = [
-          ...result.success.flatMap((territory, id) =>
-            territory.map((c) => Tile.fromCoords(c, NATION_COLORS[id]!, opts.terrain))
-          ),
-          ...BoardGeneration.neutralCoords(result.success).map((c) => Tile.fromCoords(c, undefined, "sea")),
-        ];
-        // 3. One nation per player, with the configured supplies and names, and
-        //    a mat slot per catalog domain.
-        const slots = cards.catalog.domains.map((d) => ({ domain: d.id }));
-        const nations = Array.from({ length: ctx.numPlayers }, (_, id) => {
+        // 2. Terrain selection (D23): each nation draws `target` terrain ids
+        //    from its own weighted pool (without replacement) and places them
+        //    randomly on its coords. The pool must cover the target.
+        const poolSize = Terrain.terrainPoolSize(terrain);
+        if (poolSize < opts.target) {
+          throw new Error(
+            `terrain pool (${poolSize}) is smaller than target (${opts.target})`,
+          );
+        }
+        const colors = NATION_COLORS.slice(0, ctx.numPlayers);
+        const tiles: Tile.Tile[] = [];
+        result.success.forEach((territory, id) => {
+          const color = colors[id]!;
+          const draw = Random.weightedDraw(
+            terrain.nation,
+            (t) => t.tileCount,
+            opts.target,
+            Random.nationSeed(opts.seed, id),
+          );
+          const [drawn] = Random.shuffle(draw.picked, draw.nextSeed);
+          territory.forEach((coords, i) => {
+            const def = drawn[i] ?? terrain.nation[0]!;
+            tiles.push(Tile.fromCoords(coords, color, def.id));
+          });
+        });
+        for (const c of BoardGeneration.neutralCoords(result.success)) {
+          tiles.push(Tile.fromCoords(c, undefined, Terrain.BORDER_TERRAIN_IDS[0]));
+        }
+        // 3. One nation per player, with the configured supplies and names, one
+        //    embassy per other nation (D22), and a mat slot per catalog domain.
+        const slots = cards.catalog.domains.map((d) => ({ domain: d.id, chit: Option.none<string>() }));
+        const nations = colors.map((color, id) => {
           const nation = Nation.makeNation(
-            NATION_COLORS[id]!,
+            color,
             opts.nationNames[id] ?? "Nation " + (id + 1),
             opts.pieceLimits,
+            colors,
           );
           return { ...nation, mat: { ...nation.mat, slots } };
         });
-        // 4. Wire up state, pinned to the loaded catalog.
-        return State.make(tiles, nations, {
-          version: cards.catalog.version,
-          hash: cards.hash,
-        });
+        // 4. Wire up state, pinned to the loaded catalog and terrain config.
+        return State.make(
+          tiles,
+          nations,
+          { version: cards.catalog.version, hash: cards.hash },
+          terrain.pin,
+        );
       },
     });
 
@@ -80,8 +107,11 @@ export const ServiceLive = Layer.effect(
   }),
 );
 
-/** Dev layer: the game service with an empty catalog. */
+/** Dev layer: the game service with an empty catalog and the default terrain. */
 export const ServiceDev = Layer.provide(
   ServiceLive,
-  Cards.CardCatalogFixture(Cards.emptyCatalog),
+  Layer.merge(
+    Cards.CardCatalogFixture(Cards.emptyCatalog),
+    Terrain.TerrainCatalogFixture(Terrain.DEFAULT_TERRAIN_TABLE),
+  ),
 );

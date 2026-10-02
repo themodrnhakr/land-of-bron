@@ -12,8 +12,9 @@ import * as State from "./State.ts";
 // ============================================================================
 
 // The only built-in check is `always`, so the "not fulfilled" path can only be
-// exercised with an injected predicate. This is a gap in the registry, not in
-// the scoring code — flag it for Phase 4 when real checks arrive.
+// exercised with an injected predicate. Deliberately not added to the
+// registry's id `HashSet`, so `mandateFulfilled` treats it as unregistered and
+// returns false — which is the point of this fixture.
 const FALSE_CHECK = "__test_never";
 beforeAll(() => {
   CHECKS[FALSE_CHECK] = { params: Schema.Struct({}), check: () => false };
@@ -22,46 +23,48 @@ afterAll(() => {
   Reflect.deleteProperty(CHECKS, FALSE_CHECK);
 });
 
+const check = (predicate: string) => ({ predicate, params: {} });
+
 const conquestMandate: MandateCard = {
   id: "mandate-conquest",
   name: "Mandate of Conquest",
-  domains: ["military"],
+  domain: "military",
   body: "",
   age: 1,
   minimumPlayers: 1,
   kind: "mandate",
   vp: 3,
   mandates: [
-    { subtype: "conquest", description: "", check: { mode: "endOfGame", predicate: "always" } },
-    { subtype: "siege", description: "", check: { mode: "endOfGame", predicate: FALSE_CHECK } },
+    { subtype: "conquest", description: "", check: check("always") },
+    { subtype: "siege", description: "", check: check(FALSE_CHECK) },
   ],
 };
 
 const siegeMandate: MandateCard = {
   id: "mandate-siege",
   name: "Mandate of Siege",
-  domains: ["military"],
+  domain: "military",
   body: "",
   age: 1,
   minimumPlayers: 1,
   kind: "mandate",
   vp: 5,
   mandates: [
-    { subtype: "siege", description: "", check: { mode: "endOfGame", predicate: "always" } },
+    { subtype: "siege", description: "", check: check("always") },
   ],
 };
 
 const secondConquestMandate: MandateCard = {
   id: "mandate-conquest-2",
   name: "Second Mandate of Conquest",
-  domains: ["military"],
+  domain: "military",
   body: "",
   age: 1,
   minimumPlayers: 1,
   kind: "mandate",
   vp: 4,
   mandates: [
-    { subtype: "conquest", description: "", check: { mode: "endOfGame", predicate: "always" } },
+    { subtype: "conquest", description: "", check: check("always") },
   ],
 };
 
@@ -104,12 +107,17 @@ const makeNation = (opts: NationOptions = {}): Nation => {
     score: opts.score ?? 0,
     mat: {
       cards: [],
-      slots: opts.omitSlot ? [] : [{ domain: opts.domain ?? "military", chit: opts.chit }],
+      slots: opts.omitSlot
+        ? []
+        : [{ domain: opts.domain ?? "military", chit: Option.fromUndefinedOr(opts.chit) }],
     },
   };
 };
 
-const makeState = (nation: Nation): State.State => State.make([], [nation], { version: "test", hash: "test-hash" });
+const TERRAIN_PIN = { version: "test", hash: "test-terrain" };
+
+const makeState = (nation: Nation): State.State =>
+  State.make([], [nation], { version: "test", hash: "test-hash" }, TERRAIN_PIN);
 
 // ============================================================================
 // applicableMandate
@@ -154,10 +162,10 @@ describe("applicableMandate", () => {
     expect(Option.isNone(Scoring.applicableMandate(nation, conquestMandate, catalog))).toBe(true);
   });
 
-  test("returns none for a card with no domains (documents the card.domains[0] read)", () => {
+  test("uses the card's single `domain` (D7) — a differently-domained card never applies", () => {
     const nation = makeNation({ chit: "chit-conquest" });
-    const domainless: MandateCard = { ...conquestMandate, domains: [] };
-    expect(Option.isNone(Scoring.applicableMandate(nation, domainless, catalog))).toBe(true);
+    const otherDomain: MandateCard = { ...conquestMandate, domain: "economic" };
+    expect(Option.isNone(Scoring.applicableMandate(nation, otherDomain, catalog))).toBe(true);
   });
 });
 
@@ -180,14 +188,69 @@ describe("mandateFulfilled", () => {
     const nation = makeNation({ chit: "chit-conquest" });
     const card: MandateCard = {
       ...conquestMandate,
-      mandates: [{ subtype: "conquest", description: "", check: { mode: "endOfGame", predicate: "nope" } }],
+      mandates: [{ subtype: "conquest", description: "", check: check("nope") }],
     };
     expect(Scoring.mandateFulfilled(makeState(nation), nation, card, catalog)).toBe(false);
+  });
+
+  test("is false (never throws) for a prototype-chain predicate id (D16)", () => {
+    const nation = makeNation({ chit: "chit-conquest" });
+    for (const predicate of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+      const card: MandateCard = {
+        ...conquestMandate,
+        mandates: [{ subtype: "conquest", description: "", check: check(predicate) }],
+      };
+      expect(Scoring.mandateFulfilled(makeState(nation), nation, card, catalog)).toBe(false);
+    }
   });
 
   test("is false when no mandate is applicable", () => {
     const nation = makeNation();
     expect(Scoring.mandateFulfilled(makeState(nation), nation, conquestMandate, catalog)).toBe(false);
+  });
+});
+
+// ============================================================================
+// mandateStatus (D6)
+// ============================================================================
+
+describe("mandateStatus", () => {
+  test("reports one entry per mandate holding, with fulfilment and vp", () => {
+    const nation = makeNation({
+      chit: "chit-conquest",
+      mandates: ["mandate-conquest", "mandate-siege"],
+    });
+    const statuses = Scoring.mandateStatus(makeState(nation), catalog);
+    expect(statuses).toHaveLength(2);
+    // conquest is always-fulfilled under the conquest chit; siege has no
+    // conquest row so it is held but unfulfilled.
+    expect(statuses).toEqual([
+      { color: "red", cardId: "mandate-conquest", row: expect.anything(), fulfilled: true, vp: 3 },
+      { color: "red", cardId: "mandate-siege", row: expect.anything(), fulfilled: false, vp: 0 },
+    ]);
+  });
+
+  test("ignores non-mandate and unknown card ids", () => {
+    const nation = makeNation({
+      chit: "chit-conquest",
+      mandates: ["regular-1", "missing", "mandate-conquest"],
+    });
+    expect(Scoring.mandateStatus(makeState(nation), catalog).map((s) => s.cardId)).toEqual([
+      "mandate-conquest",
+    ]);
+  });
+
+  test("mandateStatusForViewer returns only the viewer's holdings", () => {
+    const red = makeNation({ chit: "chit-conquest", mandates: ["mandate-conquest"] });
+    const blue: Nation = { ...NationModule.makeNation("blue", "Blue"), mandates: ["mandate-siege"] };
+    const state = State.make([], [red, blue], { version: "test", hash: "h" }, TERRAIN_PIN);
+    expect(Scoring.mandateStatusForViewer(state, catalog, "red").map((s) => s.color)).toEqual(["red"]);
+    expect(Scoring.mandateStatusForViewer(state, catalog, "blue").map((s) => s.color)).toEqual(["blue"]);
+  });
+
+  test("mandateStatusForViewer returns nothing for a spectator", () => {
+    const nation = makeNation({ chit: "chit-conquest", mandates: ["mandate-conquest"] });
+    expect(Scoring.mandateStatusForViewer(makeState(nation), catalog, null)).toEqual([]);
   });
 });
 

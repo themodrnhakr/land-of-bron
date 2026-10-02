@@ -20,11 +20,11 @@ package manager and runtime.
 
 **Repo layout.**
 
-| Path | What it is |
-| --- | --- |
-| `packages/game` | The rules engine + data model. **This is the focus.** |
-| `packages/server` | Stub — `console.log("test")`. Out of scope for now. |
-| `apps/web` | SvelteKit app. Currently only a hex-map layout explorer, not the game. Out of scope for now. |
+| Path              | What it is                                                                                   |
+| ----------------- | -------------------------------------------------------------------------------------------- |
+| `packages/game`   | The rules engine + data model. **This is the focus.**                                        |
+| `packages/server` | Stub — `console.log("test")`. Out of scope for now.                                          |
+| `apps/web`        | SvelteKit app. Currently only a hex-map layout explorer, not the game. Out of scope for now. |
 
 **Goal, short term.** Get the core `packages/game` package squared away.
 **Goal, medium term.** A playable game, plus a web admin portal for tweaking settings and adding cards.
@@ -32,7 +32,7 @@ package manager and runtime.
 **The agreed arc.** (a) get the schema set up → (b) start assembling the boardgame.io game object →
 (c) add all the moves that are necessary.
 
-**Working style — read this carefully.** Go *slow*. This is explicitly not a one-shot. Each phase
+**Working style — read this carefully.** Go _slow_. This is explicitly not a one-shot. Each phase
 below ends in a **GATE** where you stop, report what you did and what you found, and wait for the
 user's answer. Do not run ahead into the next phase. Do not batch phases. Do not make design
 decisions that are listed as OPEN — ask. The user is guiding this step by step and has design
@@ -43,6 +43,7 @@ documents they will feed you piecemeal; you are not expected to reverse-engineer
 ## 1. Ground rules
 
 **Do not touch:**
+
 - `apps/web/src/lib/ui/HexGridDemo.svelte` and `HexGrid.svelte` — an exploratory demo, intentionally
   not maintained. Its `svelte-check` errors are known and ignored.
 - `packages/server` — the server comes later.
@@ -51,6 +52,7 @@ documents they will feed you piecemeal; you are not expected to reverse-engineer
   "fix" it.
 
 **Conventions:**
+
 - Effect v4 idioms: return `Result`/`Option` instead of throwing or returning `undefined`; use
   `Array.findFirst` (returns `Option`) rather than `find(...) === undefined ? none : some`; chain
   with `pipe` + `Option.flatMap`; use `HashMap`/`HashSet` for lookups and set membership.
@@ -60,6 +62,7 @@ documents they will feed you piecemeal; you are not expected to reverse-engineer
 - Format with `dprint` (`bun run fmt`).
 
 **Verification commands:**
+
 ```bash
 cd packages/game && ../../node_modules/.bin/tsc --noEmit -p tsconfig.json   # typecheck (currently clean)
 bun test packages/game                                                      # tests (need to add script)
@@ -81,7 +84,7 @@ the user what they want before committing anything.
   `InvalidPlayerCount`, `InsufficientRoom`), plus `neutralCoords` for the sea ring.
 - `State.ts` — the `G` shape: `tiles`, `nations`, `turn`, `phase`, `events`, `catalog` pin.
 - `Tile.ts`, `Nation.ts`, `Pieces.ts` — tile geography/control; nations as player seats with
-  inventories where the array length *is* the supply cap.
+  inventories where the array length _is_ the supply cap.
 - `Cards.ts` — domain/subtype vocabulary, `regular` vs `mandate` cards, chits, `lintCatalog`,
   `contentHash`, and a `CardCatalog` Effect `Context.Service` with JSON decoding.
 - `Moves.ts` — the `MoveDefinition` contract (`params` Schema, `canApply`, `apply` → `Result`),
@@ -110,31 +113,42 @@ throwaway demos in `apps/web`.
 Status legend: **SETTLED** (agreed, just do it) · **PROPOSED** (agreed in principle, confirm before
 building) · **OPEN** (needs the user's input before any code).
 
-| # | Decision | Status |
-| --- | --- | --- |
-| D1 | Keep the "config references code" registry pattern (`ActionBinding` + `MOVES` + `lintCatalog`). Do not hardcode moves onto cards. | SETTLED |
-| D2 | Prefer a small number of *generic* moves parameterized by static config params over one-move-per-card. | SETTLED |
-| D3 | Cards whose actions are all `optional` may legally be played as a no-op. Acceptable, even strategically. | SETTLED |
-| D4 | Validate `binding.params` against `MOVES[move].params` at lint time (currently unchecked). Same for `check.params` against `CHECKS[predicate].params`. | SETTLED |
-| D5 | Chit acquisition is setup's purview. Deferred. | SETTLED |
-| D6 | Mandate check predicates stay pure functions of state. Delete `check.mode`. Expose one `mandateStatus` selector. **Note (D11):** mandates are win conditions but **do not end the game** — `mandateStatus` feeds the client (per-viewer) and end-of-game scoring, **not** `endIf`. | PROPOSED |
-| D7 | Mandate cards are single-domain. Encode that in the schema so `card.domains[0]` disappears. | PROPOSED |
-| D8 | Normalize/index the catalog once at load (HashMaps in the `CardCatalog` service) so lookups are O(1) and total. | PROPOSED |
-| D9 | Svelte client will be a hand-rolled Svelte 5 runes wrapper around the framework-agnostic `boardgame.io/client`. (Late phase.) | SETTLED |
-| D10 | Testing uses `bun test`, colocated `*.test.ts`. **Confirmed and implemented.** | SETTLED |
-| D11 | Hidden information. **Secret to opponents:** `hand`, `deck`, `mandates`, `mat.cards`. **Public:** `discard`, `playArea` (except special cases), `mat.slots[].chit`, `score`, all piece pools, `embassy`, `capital`. Adopt `playerView` now; redaction is a pure function of `(state, viewer)`. **Pragmatic policy:** if a zone can't be redacted without creating a mess, leave it public and mark it `// technically secret` in the schema so we know where to look later. | SETTLED |
-| D12 | Delete `State.turn` and `State.phase` from `G` — both duplicate boardgame.io `ctx` and nothing reads them. Keep `phaseSchema` as the phase-name vocabulary. `GameEvent.turn` (the historical record) and `MoveContext.turn` are separate fields and stay; the Phase 3 bridge populates both from `ctx`, with `turn` meaning the **turn counter** (`ctx.turn`). `MoveContext` gains a `phase` field in Phase 3 once phases exist. | SETTLED |
-| D13 | The reaction model. See Phase 5. **All sub-questions settled.** Human intervention required → suspension via a **`pendingReactions` declaration queue in `G`** (boardgame.io stages are transport only). **Both** interrupt and triggered reactions exist, in **two windows** (pre-effect interrupt, then post-effect trigger). Reactions are **terminal** (no chaining / stack / loop guard). **Ordering:** within each window the **targeted** player resolves first, then others in **declaration order**; all eligible players are **prompted simultaneously** and a declaration is **public immediately**; **events may have no target**. **Q4 = tags:** moves carry named **tags** (a code-side vocabulary, *not* move categories); `respondsTo` references tags; the list is authored in Phase 4. | SETTLED |
-| D14 | Add range and cross-field validation to all generation/setup numeric options: `target >= 1`, `noisePoolFraction` in `[0,1]`, `seedRingDist >= 1`, `growthCap >= seedRingDist + 2`, and piece-limit caps as integers ≥ 1 with a sane upper bound (closes the allocation DoS). Widen `PieceLimits` to `Record<keyof typeof PIECE_LIMITS, number>` so the `as PieceLimits` cast can go. Decide whether unknown `pieceLimits` keys are rejected rather than stripped. | PROPOSED |
-| D15 | Validate `target >= 1`. A board with `target < 1` is never legitimate (it silently yields 1-tile nations). | SETTLED |
-| D16 | Fix the prototype-chain hole in `lintCatalog` (`in` → `Object.hasOwn` / id `HashSet`) and harden `mandateFulfilled` so a malformed predicate returns `false` instead of throwing. Fold into Phase 2 item 7. | SETTLED |
-| D17 | Keep the Phase 0 `KNOWN BUG` / `KNOWN GAP` tests as real, failing-on-fix tests, each naming the Phase 2 item that flips it — rather than `test.todo`/skipped. | SETTLED |
-| D18 | Add `Pieces` supply-helper tests (`place`/`returnToPool`/`poolCount`/`onBoardCount`) to the Phase 0 net. Defer `Game.ServiceLive` setup coverage to Phase 3, where it belongs. | PROPOSED |
-| D19 | Normalize `Tile.control`: `color` is **immutable** and every land tile always has one (there is no uncontrolled-land state; annexation = a captured capital, deferred, and never re-homes a tile). Store **only the override** — `control` becomes `Option<Color>` where `None` means "the home colour controls it" — so `fromCoords` writes `control: None`, never `control: color`. The effective controller is a single derived accessor (`control` else `color`); nothing reads raw `.control`. | SETTLED |
-| D20 | Convert genuinely-optional fields from `Schema.optional` (`T \| undefined`) to a real `Option<T>`, matching the package's `Option`-not-`undefined` idiom. **Encoder: `Schema.OptionFromOptional`** (absent JSON key ↔ `None`; a wire-form-preserving drop-in for `Schema.optional`), *not* `Schema.Option` (which encodes `{_tag:"Some",value}`), so hand-authored catalog JSON and `contentHash` stay unaffected. **Excludes** fields whose absence means "use the default" — those gain a decoding default instead: `actionBinding.optional` → `false`, and `actionBinding.params` / `mandateRow.check.params` → `{}`. | SETTLED |
-| D21 | Terrain model (USER_NOTES §7.1). Rename to `nationTerrainIdsSchema`/`nationTerrainSchema`, `borderTerrainIdsSchema`/`borderTerrainSchema`, `allTerrainIdsSchema`/`allTerrainSchema`. Terrain types + attributes (tile name, population, population display text, movement, movement display text, asset id, **tile count**) are configurable, injected via **Effect `Config`** at **game level** (not per-match). `Tile.terrain` becomes a validated **id string** (the literal union is gone). Attributes are **normalized** in a terrain table keyed by id, **pinned in `State`** like the catalog, and **linted** against the `*Ids` schemas. `population`/`movement` are read by the engine. Per-match `terrain` option + `DEFAULT_LAND_TERRAIN` removed. | SETTLED |
-| D22 | Embassy (USER_NOTES §7.2): one entry per *other* nation, storing **only the host nation id** (no coords — the location is derived from the host's `capital`); at most one embassy per host colour, so `playerCount - 1` entries. `makeNation` gains the player count / other colours. | SETTLED |
-| D23 | Terrain selection (USER_NOTES §7.3): `target` stays an **independent** variable; terrain **tile counts** form a **weighted pool whose sum exceeds `target`**; **each nation draws independently** from its own pool (per nation; no cross-nation uniqueness constraint), **without replacement**, and places the tiles randomly on its generated coords; sea (border terrain) is excluded; the draw is seeded for reproducibility. | SETTLED |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Status     |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| D1  | Keep the "config references code" registry pattern (`ActionBinding` + `MOVES` + `lintCatalog`). Do not hardcode moves onto cards.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | SETTLED    |
+| D2  | Prefer a small number of _generic_ moves parameterized by static config params over one-move-per-card.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | SETTLED    |
+| D3  | Cards whose actions are all `optional` may legally be played as a no-op. Acceptable, even strategically.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | SETTLED    |
+| D4  | Validate `binding.params` against `MOVES[move].params` at lint time (currently unchecked). Same for `check.params` against `CHECKS[predicate].params`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | SETTLED    |
+| D5  | Chit acquisition is setup's purview. Deferred.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | SETTLED    |
+| D6  | Mandate check predicates stay pure functions of state. Delete `check.mode`. Expose one `mandateStatus` selector. **Note (D11):** mandates are win conditions but **do not end the game** — `mandateStatus` feeds the client (per-viewer) and end-of-game scoring, **not** `endIf`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | PROPOSED   |
+| D7  | Mandate cards are single-domain. Encode that in the schema so `card.domains[0]` disappears.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | PROPOSED   |
+| D8  | Normalize/index the catalog once at load (HashMaps in the `CardCatalog` service) so lookups are O(1) and total.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | PROPOSED   |
+| D9  | Svelte client will be a hand-rolled Svelte 5 runes wrapper around the framework-agnostic `boardgame.io/client`. (Late phase.)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | SETTLED    |
+| D10 | Testing uses `bun test`, colocated `*.test.ts`. **Confirmed and implemented.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | SETTLED    |
+| D11 | Hidden information. **Secret to opponents:** `hand`, `deck`, `mandates`, `mat.cards`. **Public:** `discard`, `playArea` (except special cases), `mat.slots[].chit`, `score`, all piece pools, `embassy`, `capital`. Adopt `playerView` now; redaction is a pure function of `(state, viewer)`. **Pragmatic policy:** if a zone can't be redacted without creating a mess, leave it public and mark it `// technically secret` in the schema so we know where to look later.                                                                                                                                                                                                                                                                                                                              | SETTLED    |
+| D12 | Delete `State.turn` and `State.phase` from `G` — both duplicate boardgame.io `ctx` and nothing reads them. Keep `phaseSchema` as the phase-name vocabulary. `GameEvent.turn` (the historical record) and `MoveContext.turn` are separate fields and stay; the Phase 3 bridge populates both from `ctx`, with `turn` meaning the **turn counter** (`ctx.turn`). `MoveContext` gains a `phase` field in Phase 3 once phases exist.                                                                                                                                                                                                                                                                                                                                                                         | SETTLED    |
+| D13 | The reaction model. See Phase 5. **All sub-questions settled.** Human intervention required → suspension via a **`pendingReactions` declaration queue in `G`** (boardgame.io stages are transport only). **Both** interrupt and triggered reactions exist, in **two windows** (pre-effect interrupt, then post-effect trigger). Reactions are **terminal** (no chaining / stack / loop guard). **Ordering:** within each window the **targeted** player resolves first, then others in **declaration order**; all eligible players are **prompted simultaneously** and a declaration is **public immediately**; **events may have no target**. **Q4 = tags:** moves carry named **tags** (a code-side vocabulary, _not_ move categories); `respondsTo` references tags; the list is authored in Phase 4. | SETTLED    |
+| D14 | Add range and cross-field validation to all generation/setup numeric options: `target >= 1`, `noisePoolFraction` in `[0,1]`, `seedRingDist >= 1`, `growthCap >= seedRingDist + 2`, and piece-limit caps as integers ≥ 1 with a sane upper bound (closes the allocation DoS). Widen `PieceLimits` to `Record<keyof typeof PIECE_LIMITS, number>` so the `as PieceLimits` cast can go. Decide whether unknown `pieceLimits` keys are rejected rather than stripped.                                                                                                                                                                                                                                                                                                                                        | PROPOSED   |
+| D15 | Validate `target >= 1`. A board with `target < 1` is never legitimate (it silently yields 1-tile nations).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | SETTLED    |
+| D16 | Fix the prototype-chain hole in `lintCatalog` (`in` → `Object.hasOwn` / id `HashSet`) and harden `mandateFulfilled` so a malformed predicate returns `false` instead of throwing. Fold into Phase 2 item 7.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | SETTLED    |
+| D17 | Keep the Phase 0 `KNOWN BUG` / `KNOWN GAP` tests as real, failing-on-fix tests, each naming the Phase 2 item that flips it — rather than `test.todo`/skipped.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | SETTLED    |
+| D18 | Add `Pieces` supply-helper tests (`place`/`returnToPool`/`poolCount`/`onBoardCount`) to the Phase 0 net. Defer `Game.ServiceLive` setup coverage to Phase 3, where it belongs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | PROPOSED   |
+| D19 | Normalize `Tile.control`: `color` is **immutable** and every land tile always has one (there is no uncontrolled-land state; annexation = a captured capital, deferred, and never re-homes a tile). Store **only the override** — `control` becomes `Option<Color>` where `None` means "the home colour controls it" — so `fromCoords` writes `control: None`, never `control: color`. The effective controller is a single derived accessor (`control` else `color`); nothing reads raw `.control`.                                                                                                                                                                                                                                                                                                      | SETTLED    |
+| D20 | Convert genuinely-optional fields from `Schema.optional` (`T \| undefined`) to a real `Option<T>`, matching the package's `Option`-not-`undefined` idiom. **Encoder: `Schema.OptionFromOptional`** (absent JSON key ↔ `None`; a wire-form-preserving drop-in for `Schema.optional`), _not_ `Schema.Option` (which encodes `{_tag:"Some",value}`), so hand-authored catalog JSON and `contentHash` stay unaffected. **Excludes** fields whose absence means "use the default" — those gain a decoding default instead: `actionBinding.optional` → `false`, and `actionBinding.params` / `mandateRow.check.params` → `{}`.                                                                                                                                                                                 | SETTLED    |
+| D21 | Terrain model (USER_NOTES §7.1). Rename to `nationTerrainIdsSchema`/`nationTerrainSchema`, `borderTerrainIdsSchema`/`borderTerrainSchema`, `allTerrainIdsSchema`/`allTerrainSchema`. Terrain types + attributes (tile name, population, population display text, movement, movement display text, asset id, **tile count**) are configurable, injected via **Effect `Config`** at **game level** (not per-match). `Tile.terrain` becomes a validated **id string** (the literal union is gone). Attributes are **normalized** in a terrain table keyed by id, **pinned in `State`** like the catalog, and **linted** against the `*Ids` schemas. `population`/`movement` are read by the engine. Per-match `terrain` option + `DEFAULT_LAND_TERRAIN` removed.                                            | SETTLED    |
+| D22 | Embassy (USER_NOTES §7.2): one entry per _other_ nation, storing **only the host nation id** (no coords — the location is derived from the host's `capital`); at most one embassy per host colour, so `playerCount - 1` entries. `makeNation` gains the player count / other colours.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | SETTLED    |
+| D23 | Terrain selection (USER_NOTES §7.3): `target` stays an **independent** variable; terrain **tile counts** form a **weighted pool whose sum exceeds `target`**; **each nation draws independently** from its own pool (per nation; no cross-nation uniqueness constraint), **without replacement**, and places the tiles randomly on its generated coords; sea (border terrain) is excluded; the draw is seeded for reproducibility.                                                                                                                                                                                                                                                                                                                                                                       | SETTLED    |
+| D24 | `mat.cards` capacity. Keep the comment's "3 card slots" intent: add `MAX_MAT_CARDS = 3` and enforce it as **at most** 3 (`Schema.isMaxLength(3)`), so an over-full mat is unrepresentable while partial fills stay legal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | AUTONOMOUS |
+| D25 | `State.Config` is **kept**. It is the `Service.make` game-identity config (name + seat range), so SCHEMA.md's "referenced nowhere" was stale.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | AUTONOMOUS |
+| D26 | `pieceLimits` (D14). Unknown keys are **rejected** (a strict nested decode with `onExcessProperty: "error"`, scoped so unknown _top-level_ keys stay ignored). Caps are integers in `[1, MAX_PIECE_LIMIT]` with `MAX_PIECE_LIMIT = 100` (comfortably above any real cap; closes the allocation DoS). The resolved limits are **not** recorded in `State` — the inventory array length remains the single source of truth, and "supplies are never resized" stays a documented discipline with tests.                                                                                                                                                                                                                                                                                                     | AUTONOMOUS |
+| D27 | Narrow `production.kind` to `productionKinds = Literals(["farm"])` for consistency with `units.kind`. The vocabulary starts minimal and grows with content; no game content is invented.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | AUTONOMOUS |
+| D28 | Tags vs categories (D13-Q4 / open question 11): keep **both axes**. `GameEvent.categories` narrows to `MoveCategoryId[]` (how a move is invoked); a new `tags: Tag[]` records what happened. `MoveDefinition` gains `tags` and `respondsTo: Tag[]`. `KNOWN_TAGS = ["action"]` — non-empty (a `Literals` union cannot be empty) and grows in Phase 4.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | AUTONOMOUS |
+| D29 | Terrain pin + seed (open question 12). The terrain table lives in a `TerrainCatalog` service; `State` gains its own `terrain: { version, hash }` pin (mirroring the catalog pin). The terrain draw is derived from the single match `seed` per nation (`nationSeed(seed, id)`), so one seed reproduces board **and** terrain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | AUTONOMOUS |
+| D30 | Validation placement (D14). Per-field ranges live in the field schemas; the cross-field `growthCap >= seedRingDist + 2` rule is a struct-level `Schema.makeFilter` applied to **both** `generateCoordsOpts` and `setupOptionsSchema`. Both surface as `InvalidOptions`; the `playerCount` range check stays in code as a typed `InvalidPlayerCount`.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | AUTONOMOUS |
+| D31 | `GameEvent.target` is a single `Option<Color>`, not a list (open question 10). Multi-target events can gain a separate field later without changing this one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | AUTONOMOUS |
+| D32 | Reaction declaration policy (Phase 5 detail, recorded early): **at most one declaration per player per window**; a window closes once every eligible player has declared or passed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | AUTONOMOUS |
+| D33 | Terrain schema shape (D21). `nationTerrainSchema` / `borderTerrainSchema` / `allTerrainSchema` are attribute structs. `nationTerrainIdsSchema(table)` and `allTerrainIdsSchema(table)` are **factories** (the nation id set is configurable, so it cannot be a static union); border ids are hardcoded `["sea"]`. The default table's numbers are **placeholders** — the shape and the config seam are the deliverable, not the content.                                                                                                                                                                                                                                                                                                                                                                 | AUTONOMOUS |
+| D34 | Terrain selection mechanics (D23). A shared `Random.ts` mulberry32 PRNG drives `weightedDraw` (draw `target` ids by remaining `tileCount`, without replacement) then `shuffle` (assign to the nation's coords). Setup requires `terrainPoolSize >= target`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | AUTONOMOUS |
 
 ---
 
@@ -142,17 +156,17 @@ building) · **OPEN** (needs the user's input before any code).
 
 ### Phase 0 — Test harness (safety net) — **COMPLETE**
 
-**Goal.** Have a working, fast feedback loop *before* changing schema, so schema edits are verifiable.
+**Goal.** Have a working, fast feedback loop _before_ changing schema, so schema edits are verifiable.
 
 **Delivered.** 82 tests across 5 colocated files; `tsc` clean; suite runs in ~4s; nothing committed.
 
-| File | Tests | Covers |
-| --- | --- | --- |
-| `BoardGeneration.test.ts` | 17 | determinism, exact counts, disjointness, contiguity, no duplicate coords, lattice gaps/overlaps, `InsufficientRoom`, `InvalidPlayerCount`, `InvalidOptions`, `neutralCoords` |
-| `Cards.test.ts` | 27 | `lintCatalog` (all 11 issue kinds), `contentHash`, `cardById`/`chitById`, `decodeCatalogJson` |
-| `Scoring.test.ts` | 20 | `applicableMandate`, `mandateFulfilled`, `victoryPoints` |
-| `Setup.test.ts` | 11 | `decodeSetupOptions` defaults, overrides, merge, malformed input |
-| `Coords.test.ts` | 7 | axial/cube round-trip, `hexDistance` and `add` laws |
+| File                      | Tests | Covers                                                                                                                                                                       |
+| ------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BoardGeneration.test.ts` | 17    | determinism, exact counts, disjointness, contiguity, no duplicate coords, lattice gaps/overlaps, `InsufficientRoom`, `InvalidPlayerCount`, `InvalidOptions`, `neutralCoords` |
+| `Cards.test.ts`           | 27    | `lintCatalog` (all 11 issue kinds), `contentHash`, `cardById`/`chitById`, `decodeCatalogJson`                                                                                |
+| `Scoring.test.ts`         | 20    | `applicableMandate`, `mandateFulfilled`, `victoryPoints`                                                                                                                     |
+| `Setup.test.ts`           | 11    | `decodeSetupOptions` defaults, overrides, merge, malformed input                                                                                                             |
+| `Coords.test.ts`          | 7     | axial/cube round-trip, `hexDistance` and `add` laws                                                                                                                          |
 
 Scripts added: `"test": "bun test"` in the root `package.json` and in `packages/game/package.json`.
 Generator invariants run as **property-based** tests via `effect/testing/FastCheck` (see finding E).
@@ -174,7 +188,7 @@ below and recorded as decisions D14–D16.
   Phase 3 bridge would trip over. Fix with `Object.hasOwn`, or better a `HashSet` of valid ids
   built from the registry (pairs naturally with D8). Folded into Phase 2 item 7.
 - **B. `target < 1` silently produces 1-tile nations (real bug).** The seed tile is placed
-  unconditionally, so `target: 0` and `target: -1` return *successful* boards with one tile each,
+  unconditionally, so `target: 0` and `target: -1` return _successful_ boards with one tile each,
   contradicting the "exactly `target` tiles per nation" docstring. → D15.
 - **C. Only `playerCount` is range-checked; no cross-field validation.** `noisePoolFraction`
   outside `[0,1]` is silently absorbed; `seedRingDist: 0` degenerates to `InsufficientRoom`;
@@ -208,6 +222,7 @@ intervention (→ D13). `target < 1` is never legitimate, so validate `target >=
 expensive-to-reverse design decisions. **Mostly conversation. Very little code.**
 
 **Steps.**
+
 1. Ask the user for **their** list of what they consider missing from the schema. They have design
    documentation and will work from it — do not guess or invent game concepts. If they offer a
    document, read it carefully and ask before extrapolating beyond it.
@@ -218,7 +233,7 @@ expensive-to-reverse design decisions. **Mostly conversation. Very little code.*
 shared `G`, so every player can see every other player's cards. boardgame.io's mechanism for this is
 `playerView(G, ctx, playerID)`, which returns a redacted copy of `G` per viewer. Decide: is any of
 hand / deck / private mandates / chit assignment secret? If yes, adopt `playerView` now and design
-`State` so redaction is a *pure function* of `(state, viewer)`. Deciding this after moves exist
+`State` so redaction is a _pure function_ of `(state, viewer)`. Deciding this after moves exist
 means rewriting every move, because leaking is a property of the state shape, not the move.
 
 **D12 — `G` vs `ctx`.** `State.turn` duplicates `ctx.currentPlayer` and `State.phase` duplicates
@@ -228,7 +243,7 @@ means rewriting every move, because leaking is a property of the state shape, no
 **D13 — reactions.** See Phase 5 for the full framing. The short version of the recommendation on
 the table:
 
-- **Source of truth in `G`.** After each move, a *pure* resolution function scans the newly emitted
+- **Source of truth in `G`.** After each move, a _pure_ resolution function scans the newly emitted
   `GameEvent`s against the catalog's reaction bindings and writes an explicit `pendingReactions`
   field into state (who may react, to what, in what order, what has been answered). Legal-move
   computation reads from that.
@@ -242,13 +257,14 @@ still using the framework for suspension and multiplayer. The alternative — pu
 cannot be replayed from `state.events`.
 
 **Questions to resolve for D13:**
-1. Does a human reaction ever require a *choice*, or are all reactions declarative?
+
+1. Does a human reaction ever require a _choice_, or are all reactions declarative?
 2. Interrupt (modify/veto the event before it resolves) or triggered (react after), or both?
 3. Can a reaction trigger another reaction? If yes you need a queue and a re-entrancy rule.
 4. What is the ordering rule — turn order, simultaneous, or something else? Does the zone a card
    reacts from matter?
-5. Should `respondsTo` reference broad *move categories* (as it does today), or specific named
-   *trigger kinds*? Categories are probably too blunt — a card that reacts to "an attack" should
+5. Should `respondsTo` reference broad _move categories_ (as it does today), or specific named
+   _trigger kinds_? Categories are probably too blunt — a card that reacts to "an attack" should
    not necessarily react to "any action".
 
 **GATE 1.** Present the schema gap list, the proposed record for D11/D12/D13, and wait for sign-off.
@@ -285,14 +301,14 @@ no card content exists yet.
    - Decide whether the "array length is the cap" invariant is enforced, or merely documented —
      it holds only while no move pushes or splices.
    - Note the related modelling gap: `makeNation` fills supplies **homogeneously** (all `units` are
-     `army`, all `production` is `farm`), so limits control *counts, not composition*. `unitKinds`
+     `army`, all `production` is `farm`), so limits control _counts, not composition_. `unitKinds`
      includes `missionary` and `influenceFaces` includes `goodwill`, but nothing creates them.
      If setup ever needs mixed composition, the limits schema must grow beyond `Number`.
 6. **`State.Config`** is defined and referenced nowhere. Delete it or wire it up — ask which.
 7. **D4 — lint-time param validation, plus the finding-A hole (D16).** In `lintCatalog`, decode each
    `binding.params` against `MOVES[binding.move].params`, and each `check.params` against
    `CHECKS[check.predicate].params`, reporting mismatches as `LintIssue`s. This is what makes
-   config-authored cards genuinely safe — so it must land *together with* the fix for finding A,
+   config-authored cards genuinely safe — so it must land _together with_ the fix for finding A,
    otherwise the key lookup itself is unsound. Replace the `in`-operator membership tests with
    `Object.hasOwn` (or, better, a `HashSet` of ids built from each registry — which pairs with D8's
    catalog indexing), and harden `Scoring.mandateFulfilled` so a malformed predicate returns `false`
@@ -328,6 +344,7 @@ no card content exists yet.
 **Goal.** `Game.ServiceLive.make(config)` returns a `Game` that can actually be played in memory.
 
 **Steps.**
+
 1. **Bridge the registries.** Turn `MOVES` into boardgame.io's `moves` map. Each `MoveDefinition`
    becomes a long-form move: `validateMove` derived from `canApply`, and a body that unwraps the
    `Result` and returns `INVALID_MOVE` on failure. Decide how `MoveContext` (state, actor, turn, and
@@ -361,6 +378,7 @@ results. Wait.
 **Goal.** Implement the moves the game actually needs.
 
 **Steps.**
+
 1. Ask the user to enumerate the minimum viable move set. Implement **one at a time**, in the order
    they choose; each is a `MoveDefinition` registered in `MOVES`, with its `params` schema, its
    `canApply` legality rule and its `apply` implementation.
@@ -382,10 +400,10 @@ results. Wait.
 
 - `dominion.games` is closed source; there is no published internals deep-dive. The useful public
   reference is **`rspeer/dominiate`**, an open-source Dominion simulator built around reactions.
-  Its mechanism: reaction *hooks live on the card* (`reactToAttack`, `reactToGain`, overridden from
+  Its mechanism: reaction _hooks live on the card_ (`reactToAttack`, `reactToGain`, overridden from
   no-op base methods, guarded by an `isReaction` flag); the trigger is a **mutable event object**
   passed to each reactor, which may set `attackEvent.blocked = true` — so it is a fold
-  (`reactions.reduce(applyReaction, event)`) giving *interrupt* semantics; and ordering is explicit
+  (`reactions.reduce(applyReaction, event)`) giving _interrupt_ semantics; and ordering is explicit
   at each trigger site (active player's own cards first, then opponents in seat order — i.e. APNAP).
   Dominiate never needs to suspend because its "players" are AIs that answer synchronously; that is
   precisely the problem a real multiplayer game has and it must be solved with prompts/stages.
@@ -399,26 +417,26 @@ results. Wait.
 
 **D13 sub-question status.**
 
-- **Q1 — SETTLED: both.** Interrupt (pre-resolution modify/veto) *and* triggered
+- **Q1 — SETTLED: both.** Interrupt (pre-resolution modify/veto) _and_ triggered
   (post-resolution queue) reactions exist. **Architectural consequence: a move is no longer atomic.**
-  The pipeline becomes *propose event → interrupt window (fold reactors over the in-flight event,
-  which may mutate or veto it) → resolve → trigger window (enqueue reactions to the resolved event)*.
+  The pipeline becomes _propose event → interrupt window (fold reactors over the in-flight event,
+  which may mutate or veto it) → resolve → trigger window (enqueue reactions to the resolved event)_.
   So `pendingReactions` must be able to hold an **in-flight event awaiting interruption**, not merely
   "who may respond afterwards". This shapes Phase 3's move bridge, not just Phase 5.
 - **Q2 — SETTLED: no, reactions are terminal.** An event produced by a reaction can never be
-  reacted to. No stack, no queue, no loop guard. *Implementation cushion (keeps the promised
-  "easy to change later"):* model the pending window as a **list** and the resolver as a **loop over
+  reacted to. No stack, no queue, no loop guard. _Implementation cushion (keeps the promised
+  "easy to change later"):_ model the pending window as a **list** and the resolver as a **loop over
   that list**, but simply never enqueue a reaction-produced event — so upgrading to queued later is
   a rules change, not a schema change.
-- **Q3 — SETTLED (ordering).** Two windows: an **interrupt window** *before* the event applies
+- **Q3 — SETTLED (ordering).** Two windows: an **interrupt window** _before_ the event applies
   (target's block/redirect, then other interrupters), then, if the event survives, a **trigger
-  window** *after* it applies. Within each window: the **targeted** player's reaction resolves
+  window** _after_ it applies. Within each window: the **targeted** player's reaction resolves
   first, then other reactions in the **time-bound order they were played**; all eligible players are
   **prompted simultaneously**, and a declaration is **public immediately**. **Events may have no
   target** (e.g. reacting to a player building on their own tile) — then ordering is pure declaration
   order. Consequences: (a) the event's **target is optional**; (b) `pendingReactions` is a
   **declaration queue** (public, ordered), not just a "who may respond" set — declared reactions are
-  recorded *before* their effects are applied; (c) a monotonic sequence (reuse `GameEvent.seq`)
+  recorded _before_ their effects are applied; (c) a monotonic sequence (reuse `GameEvent.seq`)
   timestamps declarations; (d) the framework stage prompts all eligible reactors at once.
   Follow-ups to pin at design time: what **closes** the window; whether one player may play **more
   than one** reaction to the same event; and multi-target events.
@@ -429,8 +447,8 @@ results. Wait.
   Phase 4** as moves are written. **Admin implication (Phase 6):** the config UI must expose the
   available tags — ideally grouped with the moves that carry each — so an author can pick
   `respondsTo` tags for a react card. Follow-up: whether the existing structural `categories`
-  (action/react/trigger/passive) survive alongside tags (recommended: yes — they say *how a move is
-  invoked*, a different axis from *what event it emits*).
+  (action/react/trigger/passive) survive alongside tags (recommended: yes — they say _how a move is
+  invoked_, a different axis from _what event it emits_).
 
 **GATE 5.** Design review before implementation, then a gate on the implementation.
 
@@ -520,7 +538,7 @@ option and `DEFAULT_LAND_TERRAIN` are **removed**.
 
 ### 7.2 Embassy → array → **D22 (SETTLED)**
 
-`embassy` becomes one entry per *other* nation, each naming its **host nation**; the embassy sits in
+`embassy` becomes one entry per _other_ nation, each naming its **host nation**; the embassy sits in
 that nation's **capital**; at most one embassy per host colour. The entry stores **only the host nation
 id**; its coordinate is **derived** from the host's `capital`, so it follows the capital. `makeNation`
 needs the player count / other colours.

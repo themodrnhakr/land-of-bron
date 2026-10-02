@@ -17,12 +17,6 @@ const expectErr = (data: unknown): Setup.SetupOptionsError => {
   return result.failure;
 };
 
-// `PieceLimits` is `typeof PIECE_LIMITS`, so its fields are literal-typed
-// (influence is exactly `8`) even though the decoder accepts any number and
-// casts the merge result. Widen before asserting on overrides; see the note in
-// the report about the `as PieceLimits` cast in Setup.ts.
-const limitsOf = (opts: Setup.ResolvedSetupOptions): Record<string, number> => ({ ...opts.pieceLimits });
-
 describe("decodeSetupOptions: defaults", () => {
   test("fills in every field when given an empty object", () => {
     const opts = expectOk({});
@@ -33,8 +27,6 @@ describe("decodeSetupOptions: defaults", () => {
     expect(opts.noisePoolFraction).toBe(0.35);
     expect(opts.seedRingDist).toBe(2);
     expect(opts.growthCap).toBe(4);
-    expect(opts.terrain).toBe(Setup.DEFAULT_LAND_TERRAIN);
-    expect(opts.terrain).toBe("plains");
     expect(opts.pieceLimits).toEqual(Pieces.PIECE_LIMITS);
     expect(opts.nationNames).toEqual([...Setup.DEFAULT_NATION_NAMES]);
     expect(opts.catalogVersion).toBeUndefined();
@@ -60,7 +52,6 @@ describe("decodeSetupOptions: overrides", () => {
       noisePoolFraction: 0.5,
       seedRingDist: 3,
       growthCap: 5,
-      terrain: "forest",
     });
     expect(opts.strategy).toBe("lattice");
     expect(opts.seed).toBe(99);
@@ -68,35 +59,36 @@ describe("decodeSetupOptions: overrides", () => {
     expect(opts.noisePoolFraction).toBe(0.5);
     expect(opts.seedRingDist).toBe(3);
     expect(opts.growthCap).toBe(5);
-    expect(opts.terrain).toBe("forest");
   });
 
   test("merges a partial pieceLimits override over the defaults", () => {
     const opts = expectOk({ pieceLimits: { influence: 3, units: 2 } });
-    const limits = limitsOf(opts);
-    expect(limits.influence).toBe(3);
-    expect(limits.units).toBe(2);
+    expect(opts.pieceLimits.influence).toBe(3);
+    expect(opts.pieceLimits.units).toBe(2);
     // Untouched keys keep their defaults.
-    expect(limits.religion).toBe(Pieces.PIECE_LIMITS.religion);
-    expect(limits.controlChits).toBe(Pieces.PIECE_LIMITS.controlChits);
-    expect(limits.production).toBe(Pieces.PIECE_LIMITS.production);
-    expect(limits.population).toBe(Pieces.PIECE_LIMITS.population);
-    expect(limits.tradePosts).toBe(Pieces.PIECE_LIMITS.tradePosts);
+    expect(opts.pieceLimits.religion).toBe(Pieces.PIECE_LIMITS.religion);
+    expect(opts.pieceLimits.controlChits).toBe(Pieces.PIECE_LIMITS.controlChits);
+    expect(opts.pieceLimits.production).toBe(Pieces.PIECE_LIMITS.production);
+    expect(opts.pieceLimits.population).toBe(Pieces.PIECE_LIMITS.population);
+    expect(opts.pieceLimits.tradePosts).toBe(Pieces.PIECE_LIMITS.tradePosts);
   });
 
-  test("silently drops unknown keys inside pieceLimits", () => {
-    const opts = expectOk({ pieceLimits: { influence: 3, bogus: 99 } });
-    expect(limitsOf(opts)).toEqual({ ...Pieces.PIECE_LIMITS, influence: 3 });
-    expect("bogus" in opts.pieceLimits).toBe(false);
+  test("rejects unknown keys inside pieceLimits (D14)", () => {
+    const failure = expectErr({ pieceLimits: { influence: 3, bogus: 99 } });
+    expect(failure._tag).toBe("InvalidSetupOptions");
   });
 
-  test("KNOWN GAP: accepts zero and negative pieceLimits overrides", () => {
-    // PLAN.md Phase 2 item 5 tightens this to integers >= 1 and removes the
-    // `as PieceLimits` cast. This test documents today's behaviour so the
-    // tightening is a visible, deliberate change.
-    const opts = expectOk({ pieceLimits: { influence: 0, units: -5 } });
-    expect(limitsOf(opts).influence).toBe(0);
-    expect(limitsOf(opts).units).toBe(-5);
+  test("rejects zero, negative, fractional and over-cap pieceLimits (D14)", () => {
+    // The old `KNOWN GAP` test pinned acceptance of 0 and negatives; the caps
+    // are now integers in [1, MAX_PIECE_LIMIT], which also closes the
+    // `Array.from({ length: 1e9 })` allocation hazard.
+    for (const bad of [0, -5, 2.5, Pieces.MAX_PIECE_LIMIT + 1, 1e9]) {
+      expectErr({ pieceLimits: { influence: bad } });
+    }
+    // The bounds themselves are accepted.
+    expect(expectOk({ pieceLimits: { influence: 1 } }).pieceLimits.influence).toBe(1);
+    expect(expectOk({ pieceLimits: { influence: Pieces.MAX_PIECE_LIMIT } }).pieceLimits.influence)
+      .toBe(Pieces.MAX_PIECE_LIMIT);
   });
 
   test("keeps a supplied nationNames list verbatim, short lists included", () => {
@@ -112,12 +104,38 @@ describe("decodeSetupOptions: overrides", () => {
   });
 });
 
+describe("decodeSetupOptions: generation range + cross-field validation (D14/D15)", () => {
+  test("rejects a target below 1", () => {
+    expectErr({ target: 0 });
+    expectErr({ target: -1 });
+    expectErr({ target: 1.5 });
+    expect(expectOk({ target: 1 }).target).toBe(1);
+  });
+
+  test("rejects noisePoolFraction outside [0, 1]", () => {
+    expectErr({ noisePoolFraction: -0.1 });
+    expectErr({ noisePoolFraction: 1.1 });
+    expect(expectOk({ noisePoolFraction: 0 }).noisePoolFraction).toBe(0);
+    expect(expectOk({ noisePoolFraction: 1 }).noisePoolFraction).toBe(1);
+  });
+
+  test("rejects seedRingDist below 1", () => {
+    expectErr({ seedRingDist: 0 });
+    expectErr({ seedRingDist: -1 });
+    expect(expectOk({ seedRingDist: 1 }).seedRingDist).toBe(1);
+  });
+
+  test("rejects growthCap below seedRingDist + 2", () => {
+    expectErr({ seedRingDist: 3, growthCap: 4 });
+    expect(expectOk({ seedRingDist: 3, growthCap: 5 }).growthCap).toBe(5);
+  });
+});
+
 describe("decodeSetupOptions: malformed input", () => {
   test("rejects malformed input with InvalidSetupOptions", () => {
     const cases: Array<unknown> = [
       { strategy: "nope" },
       { strategy: 1 },
-      { terrain: "lava" },
       { seed: "not a number" },
       { target: "seven" },
       { pieceLimits: "no" },

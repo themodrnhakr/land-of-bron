@@ -1,7 +1,15 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 import * as Coords from "./Coords.ts";
 import { actionBindingSchema } from "./Moves.ts";
-import { influenceFaces, makeSupply, PIECE_LIMITS, type PieceLimits, religionFaces, unitKinds } from "./Pieces.ts";
+import {
+  influenceFaces,
+  makeSupply,
+  PIECE_LIMITS,
+  type PieceLimits,
+  productionKinds,
+  religionFaces,
+  unitKinds,
+} from "./Pieces.ts";
 
 // ============================================================================
 // Identity
@@ -16,15 +24,22 @@ export type Color = typeof colorSchema.Type;
 // ============================================================================
 
 /**
- * The player mat: 3 card slots (a list of card ids) plus one slot per domain,
- * each holding an optional chit. Slots are built from the catalog's domains
- * at setup.
+ * How many card slots a player mat has. The comment used to claim "3 card
+ * slots" while the schema accepted an unbounded array; the cap is now
+ * enforced so a mat can never hold more than three cards.
+ */
+export const MAX_MAT_CARDS = 3;
+
+/**
+ * The player mat: `MAX_MAT_CARDS` card slots (a list of card ids) plus one slot
+ * per domain, each holding an optional chit. Slots are built from the catalog's
+ * domains at setup.
  */
 export const matSchema = Schema.Struct({
-  cards: Schema.Array(Schema.String),
+  cards: Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_MAT_CARDS)),
   slots: Schema.Array(Schema.Struct({
     domain: Schema.String,
-    chit: Schema.optional(Schema.String),
+    chit: Schema.OptionFromOptional(Schema.String),
   })),
 });
 export type Mat = typeof matSchema.Type;
@@ -72,48 +87,58 @@ export const nationSchema = Schema.Struct({
   // --- limited physical pieces: the array IS the supply ---
   influence: Schema.Array(Schema.Struct({
     face: influenceFaces,
-    at: Schema.optional(Coords.coordsSchema),
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
   })),
   religion: Schema.Array(Schema.Struct({
     face: religionFaces,
-    at: Schema.optional(Coords.coordsSchema),
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
   })),
   controlChits: Schema.Array(Schema.Struct({
-    at: Schema.optional(Coords.coordsSchema),
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
   })),
   units: Schema.Array(Schema.Struct({
     kind: unitKinds,
-    at: Schema.optional(Coords.coordsSchema),
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
   })),
   production: Schema.Array(Schema.Struct({
-    kind: Schema.String,
-    at: Schema.optional(Coords.coordsSchema),
+    kind: productionKinds,
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
   })),
   population: Schema.Array(Schema.Struct({
-    at: Schema.optional(Coords.coordsSchema),
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
   })),
   tradePosts: Schema.Array(Schema.Struct({
-    at: Schema.optional(Coords.coordsSchema),
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
   })),
 
-  // --- unique pieces (single field — cannot hold two by construction) ---
-  embassy: Schema.optional(Coords.coordsSchema),
-  capital: Schema.optional(Coords.coordsSchema),
+  // --- unique pieces ---
+  // One embassy per other nation; the host is named and the location is
+  // derived from that host's capital (D22).
+  embassy: Schema.Array(Schema.Struct({ host: colorSchema })),
+  // The capital is the nation's single unique location piece.
+  capital: Schema.OptionFromOptional(Coords.coordsSchema),
 });
 export type Nation = typeof nationSchema.Type;
+
+export type Embassy = typeof nationSchema.fields.embassy.Type[number];
 
 // ============================================================================
 // Factory
 // ============================================================================
 
 /**
- * Build a fresh nation: full supplies in the pool, empty zones.
+ * Build a fresh nation: full supplies in the pool, empty zones, and one empty
+ * embassy slot per *other* nation (D22).
+ *
  * `limits` defaults to the standard caps; setup can pass per-match overrides.
+ * `otherColors` are the other seats in the match; each yields an embassy entry
+ * naming that nation as host.
  */
 export const makeNation = (
   color: Color,
   name: string,
   limits: PieceLimits = PIECE_LIMITS,
+  otherColors: ReadonlyArray<Color> = [],
 ): Nation => ({
   color,
   name,
@@ -128,12 +153,12 @@ export const makeNation = (
   },
   score: 0,
   influence: makeSupply(limits.influence, { face: "influence" }),
-  religion: makeSupply(limits.religion, { face: "prosletized" }),
+  religion: makeSupply(limits.religion, { face: "proselytized" }),
   controlChits: makeSupply(limits.controlChits, {}),
   units: makeSupply(limits.units, { kind: "army" }),
   production: makeSupply(limits.production, { kind: "farm" }),
   population: makeSupply(limits.population, {}),
   tradePosts: makeSupply(limits.tradePosts, {}),
-  embassy: undefined,
-  capital: undefined,
+  embassy: otherColors.filter((c) => c !== color).map((host) => ({ host })),
+  capital: Option.none(),
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Option, Result } from "effect";
+import { HashMap, Option, Result } from "effect";
 import type { Catalog, MandateCard, RegularCard } from "./Cards.ts";
 import * as Cards from "./Cards.ts";
 import type { Chit } from "./Nation.ts";
@@ -7,6 +7,14 @@ import type { Chit } from "./Nation.ts";
 // ============================================================================
 // Fixture builders
 // ============================================================================
+
+/** A fully-formed bound action: decode defaults are `optional: false`, `params: {}`. */
+const bind = (move: string, overrides: Partial<{ optional: boolean; params: Record<string, unknown> }> = {}) => ({
+  move,
+  optional: false,
+  params: {},
+  ...overrides,
+});
 
 const regularCard = (overrides: Partial<Omit<RegularCard, "kind">> = {}): RegularCard => ({
   id: "c1",
@@ -23,13 +31,13 @@ const regularCard = (overrides: Partial<Omit<RegularCard, "kind">> = {}): Regula
 const mandateCard = (overrides: Partial<Omit<MandateCard, "kind">> = {}): MandateCard => ({
   id: "m1",
   name: "Mandate 1",
-  domains: ["d"],
+  domain: "d",
   body: "",
   age: 1,
   minimumPlayers: 1,
   kind: "mandate",
   vp: 2,
-  mandates: [{ subtype: "s", description: "", check: { mode: "endOfGame", predicate: "always" } }],
+  mandates: [{ subtype: "s", description: "", check: { predicate: "always", params: {} } }],
   ...overrides,
 });
 
@@ -81,6 +89,25 @@ describe("cardById / chitById", () => {
 });
 
 // ============================================================================
+// indexCatalog (D8)
+// ============================================================================
+
+describe("indexCatalog", () => {
+  test("builds O(1) lookups for cards, chits, chits-by-domain, and mandate cards", () => {
+    const c = catalog({
+      cards: [regularCard({ id: "c1" }), mandateCard({ id: "m1" })],
+      chits: [chit({ id: "k1" }), chit({ id: "k2", subtype: "other" })],
+    });
+    const index = Cards.indexCatalog(c);
+    expect(Option.isSome(HashMap.get(index.cardsById, "c1"))).toBe(true);
+    expect(Option.isNone(HashMap.get(index.cardsById, "nope"))).toBe(true);
+    expect(Option.isSome(HashMap.get(index.chitsById, "k1"))).toBe(true);
+    expect(HashMap.get(index.chitsByDomain, "d")).toEqual(Option.some(c.chits));
+    expect(index.mandateCards.map((m) => m.id)).toEqual(["m1"]);
+  });
+});
+
+// ============================================================================
 // lintCatalog
 // ============================================================================
 
@@ -88,8 +115,8 @@ describe("lintCatalog", () => {
   test("accepts an empty catalog and a well-formed catalog", () => {
     expect(Result.isSuccess(Cards.lintCatalog(Cards.emptyCatalog))).toBe(true);
     const c = catalog({
-      cards: [regularCard({ actions: [{ move: "pass" }] }), mandateCard()],
-      chits: [chit({ powers: [{ move: "pass" }] })],
+      cards: [regularCard({ actions: [bind("pass")] }), mandateCard()],
+      chits: [chit({ powers: [bind("pass")] })],
       categoryDomains: { action: ["d"] },
     });
     const result = Cards.lintCatalog(c);
@@ -98,18 +125,18 @@ describe("lintCatalog", () => {
   });
 
   test("flags an unknown move key on a card action", () => {
-    const issues = lintIssues(catalog({ cards: [regularCard({ actions: [{ move: "nope" }] })] }));
+    const issues = lintIssues(catalog({ cards: [regularCard({ actions: [bind("nope")] })] }));
     expect(issues).toContainEqual({ path: "cards.c1.actions", message: "unknown move \"nope\"" });
   });
 
   test("flags an unknown move key on a chit power", () => {
-    const issues = lintIssues(catalog({ chits: [chit({ powers: [{ move: "nope" }] })] }));
+    const issues = lintIssues(catalog({ chits: [chit({ powers: [bind("nope")] })] }));
     expect(issues).toContainEqual({ path: "chits.k1.powers", message: "unknown move \"nope\"" });
   });
 
   test("flags an unknown check predicate on a mandate row", () => {
     const card = mandateCard({
-      mandates: [{ subtype: "s", description: "", check: { mode: "endOfGame", predicate: "nope" } }],
+      mandates: [{ subtype: "s", description: "", check: { predicate: "nope", params: {} } }],
     });
     const issues = lintIssues(catalog({ cards: [card] }));
     expect(issues).toContainEqual({ path: "cards.m1.mandates", message: "unknown check \"nope\"" });
@@ -123,6 +150,11 @@ describe("lintCatalog", () => {
     });
     const chitIssues = lintIssues(catalog({ chits: [chit({ domain: "zzz" })] }));
     expect(chitIssues).toContainEqual({ path: "chits.k1", message: "unknown domain \"zzz\"" });
+  });
+
+  test("flags a mandate card's unknown single domain", () => {
+    const issues = lintIssues(catalog({ cards: [mandateCard({ domain: "zzz" })] }));
+    expect(issues).toContainEqual({ path: "cards.m1.domains", message: "unknown domain \"zzz\"" });
   });
 
   test("flags duplicate card ids", () => {
@@ -142,22 +174,14 @@ describe("lintCatalog", () => {
     expect(issues).toContainEqual({ path: "domains", message: "duplicate domain id" });
   });
 
-  test("flags a mandate subtype that belongs to none of the card's domains", () => {
+  test("flags a mandate subtype that is not in the card's domain", () => {
     const card = mandateCard({
-      mandates: [{ subtype: "other", description: "", check: { mode: "endOfGame", predicate: "always" } }],
+      mandates: [{ subtype: "other", description: "", check: { predicate: "always", params: {} } }],
     });
     const issues = lintIssues(catalog({ cards: [card] }));
     expect(issues).toContainEqual({
       path: "cards.m1.mandates",
-      message: "subtype \"other\" not in any of the card's domains",
-    });
-  });
-
-  test("flags a mandate subtype whose domain list is empty", () => {
-    const issues = lintIssues(catalog({ cards: [mandateCard({ domains: [] })] }));
-    expect(issues).toContainEqual({
-      path: "cards.m1.mandates",
-      message: "subtype \"s\" not in any of the card's domains",
+      message: "subtype \"other\" not in domain \"d\"",
     });
   });
 
@@ -185,7 +209,7 @@ describe("lintCatalog", () => {
   test("reports every issue at once rather than stopping at the first", () => {
     const issues = lintIssues(
       catalog({
-        cards: [regularCard({ actions: [{ move: "nope" }], domains: ["zzz"] }), mandateCard()],
+        cards: [regularCard({ actions: [bind("nope")], domains: ["zzz"] }), mandateCard()],
         chits: [chit({ subtype: "nope" })],
       }),
     );
@@ -199,39 +223,63 @@ describe("lintCatalog", () => {
     );
   });
 
-  test("KNOWN BUG: keys inherited from Object.prototype pass the registry check", () => {
-    // `a.move in MOVES` walks the prototype chain, so "toString",
-    // "constructor", "__proto__", ... are all accepted as valid move/check
-    // names. The check needs Object.hasOwn (or a Map/HashMap) instead.
-    const moveIssues = Cards.lintCatalog(
-      catalog({ cards: [regularCard({ actions: [{ move: "toString" }] })] }),
-    );
-    expect(Result.isSuccess(moveIssues)).toBe(true);
+  test("rejects keys inherited from Object.prototype (D16)", () => {
+    // The old `a.move in MOVES` check walked the prototype chain, so
+    // "toString", "constructor", ... were accepted. Membership is now a
+    // HashSet built from the registry, so they are reported instead.
+    for (const key of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"]) {
+      const moveIssues = lintIssues(
+        catalog({ cards: [regularCard({ actions: [bind(key)] })] }),
+      );
+      expect(moveIssues).toContainEqual({
+        path: "cards.c1.actions",
+        message: `unknown move "${key}"`,
+      });
 
-    const checkIssues = Cards.lintCatalog(
-      catalog({
-        cards: [
-          mandateCard({
-            mandates: [{
-              subtype: "s",
-              description: "",
-              check: { mode: "endOfGame", predicate: "constructor" },
-            }],
-          }),
-        ],
-      }),
-    );
-    expect(Result.isSuccess(checkIssues)).toBe(true);
+      const checkIssues = lintIssues(
+        catalog({
+          cards: [
+            mandateCard({
+              mandates: [{ subtype: "s", description: "", check: { predicate: key, params: {} } }],
+            }),
+          ],
+        }),
+      );
+      expect(checkIssues).toContainEqual({
+        path: "cards.m1.mandates",
+        message: `unknown check "${key}"`,
+      });
+    }
   });
 
-  test("KNOWN GAP: binding.params are not validated against the move's params schema (D4)", () => {
-    // `counterAttack` declares `params: { at: Coords }`, yet a binding with no
-    // params passes lint. PLAN.md D4 settles that this must be reported as a
-    // LintIssue; this test documents the gap so the fix is a visible change.
-    const issues = Cards.lintCatalog(
-      catalog({ cards: [regularCard({ actions: [{ move: "counterAttack" }] })] }),
+  test("validates binding.params against the move's params schema (D4)", () => {
+    // `counterAttack` requires `{ at: Coords }`.
+    const bad = lintIssues(catalog({ cards: [regularCard({ actions: [bind("counterAttack")] })] }));
+    expect(bad).toHaveLength(1);
+    expect(bad[0]!.path).toBe("cards.c1.actions");
+    expect(bad[0]!.message).toContain("params do not match move \"counterAttack\"");
+
+    const good = Cards.lintCatalog(
+      catalog({
+        cards: [regularCard({ actions: [bind("counterAttack", { params: { at: { q: 0, r: 0 } } })] })],
+      }),
     );
-    expect(Result.isSuccess(issues)).toBe(true);
+    expect(Result.isSuccess(good)).toBe(true);
+  });
+
+  test("validates check.params against the check's params schema (D4)", () => {
+    const c = catalog({
+      cards: [
+        mandateCard({
+          mandates: [{
+            subtype: "s",
+            description: "",
+            check: { predicate: "always", params: {} },
+          }],
+        }),
+      ],
+    });
+    expect(Result.isSuccess(Cards.lintCatalog(c))).toBe(true);
   });
 });
 
@@ -301,7 +349,7 @@ describe("decodeCatalogJson", () => {
   });
 
   test("returns LintFailed when the JSON decodes but does not lint", () => {
-    const bad = catalog({ cards: [regularCard({ actions: [{ move: "nope" }] })] });
+    const bad = catalog({ cards: [regularCard({ actions: [bind("nope")] })] });
     const result = Cards.decodeCatalogJson(JSON.stringify(bad));
     expect(Result.isFailure(result)).toBe(true);
     if (Result.isFailure(result)) {
@@ -320,6 +368,32 @@ describe("decodeCatalogJson", () => {
     const result = Cards.decodeCatalogJson(JSON.stringify(valid));
     expect(Result.isSuccess(result)).toBe(true);
     if (Result.isSuccess(result)) expect(result.success).toEqual(valid);
+  });
+
+  test("applies decode defaults for omitted action-binding fields", () => {
+    // A hand-authored catalog may omit `optional` and `params`; decoding fills
+    // them in (D20).
+    const json = JSON.stringify({
+      version: "1",
+      domains: [{ id: "d", subtypes: [] }],
+      categoryDomains: {},
+      chits: [],
+      cards: [{
+        id: "c1",
+        name: "C",
+        domains: ["d"],
+        body: "",
+        age: 1,
+        minimumPlayers: 1,
+        kind: "regular",
+        actions: [{ move: "pass" }],
+      }],
+    });
+    const result = Cards.decodeCatalogJson(json);
+    expect(Result.isSuccess(result)).toBe(true);
+    if (Result.isSuccess(result) && result.success.cards[0]!.kind === "regular") {
+      expect(result.success.cards[0]!.actions[0]).toEqual({ move: "pass", optional: false, params: {} });
+    }
   });
 
   test("accepts the empty catalog", () => {

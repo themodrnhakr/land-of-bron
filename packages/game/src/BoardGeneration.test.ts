@@ -204,20 +204,23 @@ describe("generateCoords: frontier", () => {
   });
 
   test("returns InsufficientRoom rather than a short board when the map is too small", () => {
-    // 7 nations x 7 tiles = 49 needed, but growthCap 3 only exposes 37 cells.
+    // 7 nations x 9 tiles = 63 needed, but growthCap 4 with seedRingDist 2
+    // only exposes 61 cells (1 + 6*(1+2+3+4)). growthCap 4 satisfies the
+    // cross-field minimum (seedRingDist + 2).
     const failure = expectErr(
       BoardGeneration.generateCoords({
         playerCount: 7,
         strategy: "frontier",
-        growthCap: 3,
+        target: 9,
+        growthCap: 4,
         seedRingDist: 2,
       }),
     );
     expect(failure._tag).toBe("InsufficientRoom");
     if (failure._tag !== "InsufficientRoom") return;
-    expect(failure.target).toBe(7);
+    expect(failure.target).toBe(9);
     expect(failure.playerCount).toBe(7);
-    expect(failure.growthCap).toBe(3);
+    expect(failure.growthCap).toBe(4);
     expect(failure.seedRingDist).toBe(2);
     expect(failure.actual).toBeLessThan(failure.target);
     expect(failure.nationId).toBeGreaterThanOrEqual(0);
@@ -302,17 +305,50 @@ describe("generateCoords: option validation", () => {
     }
   });
 
-  test("KNOWN BUG: a target below 1 silently yields 1-tile nations instead of failing", () => {
-    // The docstring promises "exactly `target` tiles per nation". Nothing
-    // validates `target >= 1`, so 0 and negatives return a 1-tile board.
-    // PLAN.md Phase 2 does not currently list this; decide with the user
-    // whether to (a) require an integer >= 1, or (b) reject in `generateCoords`.
-    for (const target of [0, -1]) {
-      const result = BoardGeneration.generateCoords({ playerCount: 2, strategy: "frontier", target });
-      expect(Result.isSuccess(result)).toBe(true);
-      if (Result.isFailure(result)) continue;
-      expect(result.success.map((t) => t.length)).toEqual([1, 1]);
+  test("rejects a target below 1 (D15) instead of yielding 1-tile nations", () => {
+    // This used to be a KNOWN BUG: the seed tile was placed unconditionally, so
+    // target 0/-1 returned a successful 1-tile board. The field is now an
+    // integer >= 1, so it surfaces as a typed InvalidOptions.
+    for (const target of [0, -1, 1.5]) {
+      const failure = expectErr(
+        BoardGeneration.generateCoords({ playerCount: 2, strategy: "frontier", target }),
+      );
+      expect(failure._tag).toBe("InvalidOptions");
     }
+    const ok = expectOk(
+      BoardGeneration.generateCoords({ playerCount: 2, strategy: "frontier", target: 1 }),
+    );
+    expect(ok.map((t) => t.length)).toEqual([1, 1]);
+  });
+
+  test("rejects noisePoolFraction outside [0, 1]", () => {
+    for (const noisePoolFraction of [-0.1, 1.1, 2]) {
+      const failure = expectErr(
+        BoardGeneration.generateCoords({ playerCount: 2, strategy: "frontier", noisePoolFraction }),
+      );
+      expect(failure._tag).toBe("InvalidOptions");
+    }
+    expectOk(BoardGeneration.generateCoords({ playerCount: 2, strategy: "frontier", noisePoolFraction: 0 }));
+    expectOk(BoardGeneration.generateCoords({ playerCount: 2, strategy: "frontier", noisePoolFraction: 1 }));
+  });
+
+  test("rejects seedRingDist below 1", () => {
+    for (const seedRingDist of [0, -1, 1.5]) {
+      const failure = expectErr(
+        BoardGeneration.generateCoords({ playerCount: 2, strategy: "frontier", seedRingDist }),
+      );
+      expect(failure._tag).toBe("InvalidOptions");
+    }
+  });
+
+  test("rejects growthCap below seedRingDist + 2 with InvalidOptions", () => {
+    const failure = expectErr(
+      BoardGeneration.generateCoords({ playerCount: 2, strategy: "frontier", seedRingDist: 3, growthCap: 4 }),
+    );
+    expect(failure._tag).toBe("InvalidOptions");
+    expectOk(
+      BoardGeneration.generateCoords({ playerCount: 2, strategy: "frontier", seedRingDist: 3, growthCap: 5 }),
+    );
   });
 });
 

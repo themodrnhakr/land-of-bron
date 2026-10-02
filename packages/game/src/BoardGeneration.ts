@@ -23,8 +23,37 @@ export type Strategy = typeof strategySchema.Type;
  *
  * The fields with decoding defaults (`seed`, `target`, `noisePoolFraction`,
  * `seedRingDist`, `growthCap`) may be omitted by the caller; they are filled
- * in during decoding. See {@link GenerateCoordsOpts} for the caller-facing
- * shape.
+ * in during decoding. Per-field ranges are enforced here and the cross-field
+ * `growthCap >= seedRingDist + 2` rule is a struct-level check (D14), so bad
+ * options surface as a typed `InvalidOptions` error rather than as a confusing
+ * downstream `InsufficientRoom`.
+ *
+ * See {@link GenerateCoordsOpts} for the caller-facing shape.
+ */
+export const generationCrossFieldIssues = (
+  opts: { readonly growthCap: number; readonly seedRingDist: number },
+): Array<Schema.FilterIssue> => {
+  const issues: Array<Schema.FilterIssue> = [];
+  if (opts.growthCap < opts.seedRingDist + 2) {
+    issues.push({
+      path: ["growthCap"],
+      issue: `growthCap (${opts.growthCap}) must be at least seedRingDist + 2 (${opts.seedRingDist + 2})`,
+    });
+  }
+  return issues;
+};
+
+/**
+ * Options for {@link generateCoords}, as a validating schema.
+ *
+ * The fields with decoding defaults (`seed`, `target`, `noisePoolFraction`,
+ * `seedRingDist`, `growthCap`) may be omitted by the caller; they are filled
+ * in during decoding. Per-field ranges are enforced here and the cross-field
+ * `growthCap >= seedRingDist + 2` rule is a struct-level check (D14), so bad
+ * options surface as a typed `InvalidOptions` error rather than as a confusing
+ * downstream `InsufficientRoom`.
+ *
+ * See {@link GenerateCoordsOpts} for the caller-facing shape.
  */
 export const generateCoordsOpts = Schema.Struct({
   playerCount: Schema.Number,
@@ -32,25 +61,30 @@ export const generateCoordsOpts = Schema.Struct({
   seed: Schema.Number.pipe(Schema.withDecodingDefaultKey(
     Effect.succeed(0),
   )),
-  // Exact tiles per nation (frontier strategy).
-  target: Schema.Number.pipe(Schema.withDecodingDefaultKey(
+  // Exact tiles per nation (frontier strategy). A target below 1 is never a
+  // legitimate board (D15).
+  target: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.withDecodingDefaultKey(
     Effect.succeed(7),
   )),
   // Random pick pool: closest N% of frontier cells per claim. Lower = smoother
   // borders, higher = more ragged.
-  noisePoolFraction: Schema.Number.pipe(Schema.withDecodingDefaultKey(
+  noisePoolFraction: Schema.Number.check(
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(1),
+  ).pipe(Schema.withDecodingDefaultKey(
     Effect.succeed(0.35),
   )),
   // Distance of the seed ring from the center (frontier strategy).
-  seedRingDist: Schema.Number.pipe(Schema.withDecodingDefaultKey(
+  seedRingDist: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.withDecodingDefaultKey(
     Effect.succeed(2),
   )),
-  // Outward growth limit from the center; keeps the landmass compact. Should
-  // be at least seedRingDist + 2 or nations near the rim can run out of room.
-  growthCap: Schema.Number.pipe(Schema.withDecodingDefaultKey(
+  // Outward growth limit from the center; keeps the landmass compact. Must be
+  // at least seedRingDist + 2 or nations near the rim can run out of room
+  // (enforced by the struct-level check below).
+  growthCap: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.withDecodingDefaultKey(
     Effect.succeed(4),
   )),
-});
+}).check(Schema.makeFilter(generationCrossFieldIssues));
 
 /**
  * Caller-facing options for {@link generateCoords}.

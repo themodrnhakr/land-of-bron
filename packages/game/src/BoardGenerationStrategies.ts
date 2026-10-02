@@ -1,6 +1,7 @@
 import { Array, HashMap, Option, Order, pipe, Result } from "effect";
 import type { InsufficientRoomError, ResolvedGenerateCoordsOpts } from "./BoardGeneration.ts";
 import * as Coords from "./Coords.ts";
+import { nextRandom } from "./Random.ts";
 
 // ============================================================================
 // Strategy: Lattice
@@ -153,16 +154,8 @@ const pickMostConstrained = (
     }),
   );
 
-// One step of the mulberry32 PRNG: given the current seed, produce a random
-// number in [0, 1) plus the next seed. Purely functional — the PRNG state is
-// carried inside FrontierState, so a given seed always reproduces the same
-// layout with no mutable variables.
-const nextRandom = (seed: number): readonly [number, number] => {
-  const a = (seed + 0x6d2b79f5) | 0;
-  let t = Math.imul(a ^ (a >>> 15), 1 | a);
-  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-  return [((t ^ (t >>> 14)) >>> 0) / 4294967296, a >>> 0];
-};
+// One step of the seeded PRNG lives in Random.ts so generation and terrain
+// selection share a single, reproducible stream.
 
 // Pick which frontier cell to claim. Filler-first: fill concave notches before
 // extending arms, so shapes glob together. Within that pool, pick randomly

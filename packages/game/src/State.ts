@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import * as Coords from "./Coords.ts";
+import { moveCategorySchema, tagSchema } from "./Moves.ts";
 import { colorSchema, type Nation, nationSchema } from "./Nation.ts";
 import { type Tile, tileSchema } from "./Tile.ts";
 
@@ -7,6 +8,10 @@ import { type Tile, tileSchema } from "./Tile.ts";
 // Game configuration
 // ============================================================================
 
+/**
+ * Game-level identity: the name and the seat range. This is the argument to
+ * `Game.Service.make`, not match state — it is deliberately not part of `G`.
+ */
 export class Config extends Schema.TaggedClass<Config>()("State/Config", {
   name: Schema.String,
   minPlayers: Schema.Number,
@@ -24,13 +29,18 @@ export type Phase = typeof phaseSchema.Type;
 /**
  * A structured record of one move execution — the shared substrate for
  * reactions and event-driven mandate checks.
+ *
+ * `categories` records how the move was invoked (structural); `tags` records
+ * what happened (the semantic event kinds `respondsTo` matches against).
  */
 export const gameEventSchema = Schema.Struct({
   seq: Schema.Number,
   move: Schema.String, // registry key
-  categories: Schema.Array(Schema.String), // from the move definition (code)
+  categories: Schema.Array(moveCategorySchema),
+  tags: Schema.Array(tagSchema),
   actor: colorSchema,
-  at: Schema.optional(Coords.coordsSchema),
+  at: Schema.OptionFromOptional(Coords.coordsSchema),
+  target: Schema.OptionFromOptional(colorSchema),
   params: Schema.Record(Schema.String, Schema.Unknown),
   turn: Schema.Number,
 });
@@ -43,23 +53,35 @@ export const catalogPinSchema = Schema.Struct({
 });
 export type CatalogPin = typeof catalogPinSchema.Type;
 
+/** The pinned terrain-config identity for a match (D21/D29). */
+export const terrainPinSchema = Schema.Struct({
+  version: Schema.String,
+  hash: Schema.String,
+});
+export type TerrainPin = typeof terrainPinSchema.Type;
+
 /**
  * The whole game: the board (tiles, land + sea) and one nation per player
- * (indexed by playerID), the event log, and the pinned catalog.
+ * (indexed by playerID), the event log, and the pinned catalog + terrain.
+ *
+ * Turn and phase live in boardgame.io's `ctx`, never here (D12).
  */
 export class State extends Schema.TaggedClass<State>()("State", {
   tiles: Schema.Array(tileSchema),
   nations: Schema.Array(nationSchema),
-  turn: Schema.Number, // current playerID
-  phase: phaseSchema,
   events: Schema.Array(gameEventSchema),
   catalog: catalogPinSchema,
+  terrain: terrainPinSchema,
 }) {}
 
 // ============================================================================
 // Factory
 // ============================================================================
 
-/** Build the initial state: turn 0 in the "action" phase, empty event log. */
-export const make = (tiles: Tile[], nations: Nation[], catalog: CatalogPin): State =>
-  new State({ tiles, nations, turn: 0, phase: "action", events: [], catalog });
+/** Build the initial state: an empty event log, pinned to the catalog + terrain. */
+export const make = (
+  tiles: Tile[],
+  nations: Nation[],
+  catalog: CatalogPin,
+  terrain: TerrainPin,
+): State => new State({ tiles, nations, events: [], catalog, terrain });

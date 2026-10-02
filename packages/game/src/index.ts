@@ -33,3 +33,12 @@ export * as BoardGeneration from "./BoardGeneration.ts";
 
 /** Individual generation strategies (`Lattice`, `Frontier`). */
 export * as BoardGenerationStrategies from "./BoardGenerationStrategies.ts";
+
+/** Terrain definitions, the normalized terrain table, and Effect Config wiring. */
+export * as Terrain from "./Terrain.ts";
+
+/** Seeded PRNG helpers shared by generation and terrain selection. */
+export * as Random from "./Random.ts";
+
+/** Deterministic, key-order-independent content hashing. */
+export * as ContentHash from "./ContentHash.ts";
