@@ -1,4 +1,4 @@
-import { Array, Effect, HashSet, Option, Result, Schema } from "effect";
+import { Array, Effect, HashMap, HashSet, Option, Result, Schema } from "effect";
 import * as Coords from "./Coords.ts";
 import type { Color } from "./Nation.ts";
 import type { GameEvent, Phase, State } from "./State.ts";
@@ -165,3 +165,35 @@ export const MOVE_IDS: HashSet.HashSet<string> = HashSet.fromIterable(Object.key
 
 /** The valid check-predicate ids as a `HashSet`. */
 export const CHECK_IDS: HashSet.HashSet<string> = HashSet.fromIterable(Object.keys(CHECKS));
+
+// ============================================================================
+// Tag usage index (Phase 6 admin portal)
+// ============================================================================
+
+const indexBy = (
+  pick: (def: MoveDefinition<any>) => ReadonlyArray<Tag> | undefined,
+  moves: Record<string, MoveDefinition<any>>,
+): HashMap.HashMap<Tag, ReadonlyArray<string>> => {
+  let acc = HashMap.empty<Tag, ReadonlyArray<string>>();
+  for (const [id, def] of Object.entries(moves)) {
+    for (const tag of pick(def) ?? []) {
+      const existing = HashMap.get(acc, tag);
+      acc = HashMap.set(acc, tag, Option.isSome(existing) ? [...existing.value, id] : [id]);
+    }
+  }
+  return acc;
+};
+
+/**
+ * Every tag mapped to the moves whose emitted event carries it. The admin
+ * portal needs this so an author can pick a `respondsTo` tag and see which
+ * moves produce it (D13-Q4 / Phase 6).
+ */
+export const tagIndex = (
+  moves: Record<string, MoveDefinition<any>> = MOVES,
+): HashMap.HashMap<Tag, ReadonlyArray<string>> => indexBy((def) => def.tags, moves);
+
+/** Every tag mapped to the react moves that respond to it. */
+export const respondsToIndex = (
+  moves: Record<string, MoveDefinition<any>> = MOVES,
+): HashMap.HashMap<Tag, ReadonlyArray<string>> => indexBy((def) => def.respondsTo, moves);
