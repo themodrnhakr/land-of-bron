@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "bun --bun --filter '*' dev",
     "build": "bun --bun --filter '*' build",
+    "test": "bun test",
     "fmt": "dprint fmt",
     "fmt:check": "dprint check"
   },

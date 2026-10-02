@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
+  "scripts": {
+    "test": "bun test"
+  },
   "dependencies": {
     "boardgame.io": "^0.50.2",
     "effect": "beta"
