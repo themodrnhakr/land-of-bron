@@ -84,10 +84,17 @@ describe("Game assembly (Phase 3)", () => {
 
   test("accepts a move whose params decode and logs the `at` location", () => {
     const { client } = makeClient();
-    move(client, "counterAttack", { at: { q: 1, r: 0 } });
+    const at = client.getState()!.G.tiles[0]!.coords;
+    move(client, "counterAttack", { at });
     const state = client.getState();
     expect(state?.G.events).toHaveLength(1);
-    expect(state?.G.events[0]!.at).toEqual({ q: 1, r: 0 });
+    expect(state?.G.events[0]!.at).toEqual(at);
+  });
+
+  test("rejects a move whose target is not a board cell", () => {
+    const { client } = makeClient();
+    move(client, "counterAttack", { at: { q: 9999, r: 9999 } });
+    expect(client.getState()?.G.events).toEqual([]);
   });
 
   test("endIf does not end the game (deferred trigger, D39)", () => {

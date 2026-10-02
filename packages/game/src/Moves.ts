@@ -1,7 +1,8 @@
-import { Effect, HashSet, Result, Schema } from "effect";
+import { Array, Effect, HashSet, Option, Result, Schema } from "effect";
 import * as Coords from "./Coords.ts";
 import type { Color } from "./Nation.ts";
 import type { Phase, State } from "./State.ts";
+import type { Tile } from "./Tile.ts";
 
 // ============================================================================
 // Move categories
@@ -116,11 +117,21 @@ const pass: MoveDefinition<{}> = {
   apply: (ctx) => Result.succeed({ state: ctx.state }),
 };
 
+/** The board cell at `at`, if the board has one. */
+const tileAt = (ctx: MoveContext, at: Coords.Coords): Option.Option<Tile> =>
+  Array.findFirst(ctx.state.tiles, (t) => t.coords.q === at.q && t.coords.r === at.r);
+
+/**
+ * PLACEHOLDER MOVE. The real counter-attack rule is user-provided (Phase 4 is
+ * gated on the move set). Its only enforced legality here is structural: the
+ * targeted cell must exist on the board, and the event carries the `action`
+ * tag it responds to.
+ */
 const counterAttack: MoveDefinition<{ readonly at: Coords.Coords }> = {
   categories: ["react"],
   respondsTo: ["action"],
   params: Schema.Struct({ at: Coords.coordsSchema }),
-  canApply: () => Result.succeed(true),
+  canApply: (ctx, p) => Result.succeed(Option.isSome(tileAt(ctx, p.at))),
   apply: (ctx) => Result.succeed({ state: ctx.state }),
 };
 
