@@ -6,9 +6,11 @@ It is a scratch plan, not permanent documentation — move or delete it when it 
 **Companion doc:** `SCHEMA.md` — a complete inventory of every current Effect schema, with the
 irregularities annotated. Read it alongside Phase 1.
 
-**Status.** Phase 0 **complete** (82 tests, `tsc` clean, nothing committed). Phase 1 **blocked** on
-the user's schema gap list. Findings from Phase 0 are recorded in the Phase 0 section below and
-feed Phase 2.
+**Status.** Phases 0–6 **complete** (178 tests, `tsc` clean). Phases 2–6 were executed in one run
+with the per-gate stop waived; every autonomous decision is recorded in the decision log (D24–D51)
+and listed in the run report. Two pieces are deliberately deferred to the user: the **move set**
+(and its tag vocabulary) and the **game-end trigger**; the **catalog content** and **admin portal**
+remain the medium-term goal (Phase 6).
 
 ---
 

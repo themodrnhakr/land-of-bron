@@ -1,384 +1,429 @@
-# Land of Bron — Current Schema Inventory
+# Land of Bron — Schema Inventory
 
-Snapshot of every Effect `Schema` in `packages/game/src`, as of the Phase 0 test harness.
-Reference for Phase 1 (schema gap analysis) and Phase 2 (schema cleanup).
-Scratch document — delete when it stops being useful.
+Snapshot of every Effect `Schema` and the code-side contracts in `packages/game/src`, brought up to
+date after Phases 2–6. Companion to `PLAN.md`; the decision-log entries it references are in
+`PLAN.md` section 3. Scratch document — delete when it stops being useful.
 
-Legend: `opt` = `Schema.optional(...)` · `= X` = decoding default · ⚠ = noted irregularity
+Legend: `opt` = `Schema.optional(...)` · `OptFromOpt` = `Schema.OptionFromOptional(...)` (absent key ⇄ `None`, D20) · `= X` = decoding default · ⚠ = noted irregularity · **AUT** = an autonomous decision in this run.
 
 ---
 
 ## Coords.ts — hex primitives
 
 ```ts
-coordsSchema = Struct({ q: Number, r: Number })
-  type Coords = { q: number; r: number }
+coordsSchema = Struct({ q: Number, r: Number })          type Coords = { q; r }
+cubeSchema   = Struct({ q: Number, r: Number, s: Number }) type Cube = { q; r; s }
+  ⚠ q + r + s === 0 is documented but NOT enforced
 
-cubeSchema = Struct({ q: Number, r: Number, s: Number })
-  type Cube = { q: number; r: number; s: number }
-  ⚠ invariant q + r + s === 0 is documented but NOT enforced by the schema
-
-Constants:  ORIGIN = { q: 0, r: 0 }
-            DIRECTIONS = 6 axial unit vectors
-Functions:  toCube(coords) -> Cube
-            fromCube(cube) -> Coords
-            hexDistance(a, b) -> number
-            add(a, b) -> Coords
+ORIGIN, DIRECTIONS (6 axial vectors)
+toCube, fromCube, hexDistance, add
 ```
 
 ## Tile.ts — geography + control
 
 ```ts
-landTerrainSchema = Literals(["plains", "forest", "mountain", "desert"])
-terrainNameSchema = Union([landTerrainSchema, Literal("sea")])
-  type TerrainName = "plains" | "forest" | "mountain" | "desert" | "sea"
+terrainIdSchema = String                                  type TerrainId
+  // a plain validated string; the valid set is the configured terrain table (D21)
 
 tileSchema = Struct({
   coords:  coordsSchema,
-  terrain: terrainNameSchema,
-  color:   opt(colorSchema),     // home nation; absent on sea tiles
-  control: opt(colorSchema),     // current controller
+  terrain: terrainIdSchema,
+  color:   OptFromOpt(colorSchema),   // home nation; None on sea
+  control: OptFromOpt(colorSchema),   // OVERRIDE ONLY; None = home controls (D19)
 })
   type Tile
 
-fromCoords(coords, color | undefined, terrain) -> Tile   // sets control = color
+fromCoords(coords, color | undefined, terrain) -> Tile    // control always None
+effectiveControl(tile) -> Option<Color>                   // override else home; None on sea
+homeColor(tile) -> Option<Color>
 ```
+
+`landTerrainSchema` / `terrainNameSchema` / `LandTerrain` / `TerrainName` are **gone** (D21).
 
 ## Nation.ts — the player seat
 
 ```ts
-colorSchema = Literals(["red", "orange", "yellow", "green", "blue", "indigo", "violet"])
-  type Color
+colorSchema = Literals(["red","orange","yellow","green","blue","indigo","violet"])  type Color
 
+MAX_MAT_CARDS = 3
 matSchema = Struct({
-  cards: Array(String),                    // ⚠ comment says "3 card slots"; array is unbounded
-  slots: Array(Struct({
-    domain: String,                        // domain id
-    chit:   opt(String),                   // chit id
-  })),
-})
-  type Mat
+  cards: Array(String).check(isMaxLength(3)),             // at most 3 (D24)
+  slots: Array(Struct({ domain: String, chit: OptFromOpt(String) })),
+})  type Mat
 
 chitSchema = Struct({
-  id:          String,
-  domain:      String,                     // domain id      (lint-checked only)
-  subtype:     String,                     // mandate row    (lint-checked only)
-  description: String,
-  powers:      Array(actionBindingSchema),
-})
-  type Chit
+  id, domain, subtype, description: String,
+  powers: Array(actionBindingSchema),
+})  type Chit
 
 nationSchema = Struct({
-  color: colorSchema,
-  name:  String,
+  color, name: colorSchema, String,
+  hand, deck, discard, playArea, mandates: Array(String),
+  mat: matSchema,
+  score: Number,
+  influence:   Array(Struct({ face: influenceFaces, at: OptFromOpt(coordsSchema) })),
+  religion:    Array(Struct({ face: religionFaces,  at: OptFromOpt(coordsSchema) })),
+  controlChits:Array(Struct({ at: OptFromOpt(coordsSchema) })),
+  units:       Array(Struct({ kind: unitKinds,     at: OptFromOpt(coordsSchema) })),
+  production:  Array(Struct({ kind: productionKinds, at: OptFromOpt(coordsSchema) })),
+  population:  Array(Struct({ at: OptFromOpt(coordsSchema) })),
+  tradePosts:  Array(Struct({ at: OptFromOpt(coordsSchema) })),
+  embassy: Array(Struct({ host: colorSchema })),          // one per OTHER nation, host only (D22)
+  capital: OptFromOpt(coordsSchema),
+})  type Nation
+  type Embassy = nationSchema.fields.embassy.Type[number]
 
-  // --- off-board zones (card ids) ---
-  hand:     Array(String),
-  deck:     Array(String),
-  discard:  Array(String),
-  playArea: Array(String),
-  mandates: Array(String),
-  mat:      matSchema,
-  score:    Number,                        // bonus VP only; mandate VP is derived
-
-  // --- limited pieces: array length IS the supply cap ---
-  influence:   Array(Struct({ face: influenceFaces, at: opt(coordsSchema) })),
-  religion:    Array(Struct({ face: religionFaces,  at: opt(coordsSchema) })),
-  controlChits:Array(Struct({ at: opt(coordsSchema) })),
-  units:       Array(Struct({ kind: unitKinds,      at: opt(coordsSchema) })),
-  production:  Array(Struct({ kind: String,         at: opt(coordsSchema) })),  // ⚠ kind NOT narrowed
-  population:  Array(Struct({ at: opt(coordsSchema) })),                        // ⚠ no distinguishing field
-  tradePosts:  Array(Struct({ at: opt(coordsSchema) })),
-
-  // --- unique pieces ---
-  embassy: opt(coordsSchema),
-  capital: opt(coordsSchema),
-})
-  type Nation
-
-makeNation(color, name, limits = PIECE_LIMITS) -> Nation
+makeNation(color, name, limits = PIECE_LIMITS, otherColors = []) -> Nation
+  // embassy = otherColors minus self, one entry each
 ```
 
-## Pieces.ts — piece faces, supply caps, placement helpers
+## Pieces.ts — piece faces, supply caps, placement
 
 ```ts
-influenceFaces = Literals(["influence", "goodwill"])
-religionFaces  = Literals(["prosletized", "converted"])   // ⚠ typo: should be "proselytized"
-unitKinds      = Literals(["army", "missionary"])
+influenceFaces = Literals(["influence","goodwill"])
+religionFaces  = Literals(["proselytized","converted"])   // typo fixed (Phase 2 item 1)
+unitKinds      = Literals(["army","missionary"])
+productionKinds= Literals(["farm"])                       // open vocabulary, grows with content (D27)
 
-PIECE_LIMITS = {
-  influence: 8, religion: 6, controlChits: 4, units: 8,
-  production: 6, population: 6, tradePosts: 3,
-} as const
-  type PieceLimits = typeof PIECE_LIMITS
-  ⚠ literal-typed: `PieceLimits["influence"]` is `8`, so any override is a type lie
+PIECE_LIMITS = { influence:8, religion:6, controlChits:4, units:8, production:6, population:6, tradePosts:3 } as const
+PIECE_LIMIT_KEYS = readonly ["influence", ...]            // matches PIECE_LIMITS keys
+type PieceLimits = Record<keyof typeof PIECE_LIMITS, number>   // widened, no cast needed (D14/D26)
+MAX_PIECE_LIMIT = 100
 
-type PlacedPiece<A> = A & { readonly at?: Coords }
-
-makeSupply(count, data) -> PlacedPiece<A>[]      // full supply in the pool
-place(piece, at) -> P                            // immutable placement
-returnToPool(piece) -> P                         // immutable return
-poolCount(pieces) -> number
-onBoardCount(pieces) -> number
+type PlacedPiece<A = unknown> = A & { readonly at: Option<Option<Coords>> }   // Option, not undefined (D20)
+makeSupply(count, data) -> PlacedPiece<A>[]  // every piece at = None
+place(piece, at), returnToPool(piece)        // immutable
+poolCount(pieces), onBoardCount(pieces)
 ```
 
-## Moves.ts — the behaviour registries
+## Moves.ts — registries + contracts
 
 ```ts
-MOVE_CATEGORY_IDS = ["action", "react", "trigger", "passive"]
-  type MoveCategoryId
+MOVE_CATEGORY_IDS = ["action","react","trigger","passive"]
+moveCategorySchema = Literals(MOVE_CATEGORY_IDS)
+
+KNOWN_TAGS = ["action"]               // code-side event vocabulary; non-empty, grows in Phase 4 (D28/D44)
+type Tag = typeof KNOWN_TAGS[number]
+tagSchema = Literals(KNOWN_TAGS)
 
 actionBindingSchema = Struct({
-  move:     String,                        // key into MOVES      (lint-checked only)
-  optional: opt(Boolean),                  // player may skip
-  params:   opt(Record(String, Unknown)),  // static args, ⚠ never decoded against the move's params
-})
-  type ActionBinding
+  move: String,                        // key into MOVES (lint-checked, HashSet)
+  optional: Boolean = false,           // decoding default (D20)
+  params: Record(String, Unknown) = {},// decoding default (D20); validated in lint (D4)
+})  type ActionBinding
 
-// Interfaces (no schema; these are the code-side contract)
-type MoveError      = { _tag: "Unimplemented"; move } | { _tag: "Illegal"; reason }
-interface MoveContext   { state: State; actor: Color; turn: number }
-interface MoveOutcome   { state: State }
-interface MoveDefinition<P> {
-  categories: ReadonlyArray<MoveCategoryId>
-  respondsTo?: ReadonlyArray<MoveCategoryId>
-  params: Schema.Schema<P>
-  canApply: (ctx: MoveContext, p: P) => Result<boolean, MoveError>
-  apply:    (ctx: MoveContext, p: P) => Result<MoveOutcome, MoveError>
+interface MoveMetadata { categories: ReadonlyArray<MoveCategoryId>; tags?: ReadonlyArray<Tag> }
+interface MoveDefinition<P> extends MoveMetadata {
+  respondsTo?: ReadonlyArray<Tag>
+  params: Schema.ConstraintDecoder<P>
+  canApply: (ctx, p) => Result<boolean, MoveError>
+  apply:    (ctx, p) => Result<MoveOutcome, MoveError>
 }
-interface CheckDefinition<P> {
-  params: Schema.Schema<P>
-  check: (state: State, p: P) => boolean
-}
+type MoveError = { _tag:"Unimplemented"; move } | { _tag:"Illegal"; reason }
 
-MOVES: { pass: MoveDefinition<{}>, counterAttack: MoveDefinition<{ at: Coords }> }
-  type MoveId = keyof typeof MOVES
-CHECKS: Record<string, CheckDefinition<unknown>> = { always }
+interface MoveContext { state: State; actor: Color; turn: number; phase: Phase; pendingEvent?: GameEvent }
+interface MoveOutcome { state: State; veto?: boolean; event?: GameEvent }   // veto/event for interrupts (D13)
+
+interface CheckDefinition<P> { params: Schema.ConstraintDecoder<P>; check: (state, p) => boolean }
+
+MOVES = { pass, counterAttack }        type MoveId = keyof typeof MOVES
+  // pass: categories ["action"], tags ["action"], params {}
+  // counterAttack: categories ["react"], respondsTo ["action"], params { at: Coords },
+  //   canApply = the target cell exists on the board (structural placeholder, D43)
+CHECKS = { always }
+
+MOVE_IDS, CHECK_IDS: HashSet<string>   // prototype-safe membership (D16)
+tagIndex(), respondsToIndex(): HashMap<Tag, ReadonlyArray<MoveId>>  // admin-portal picker (D51)
 ```
 
 ## Cards.ts — the catalog
 
 ```ts
-// internal, spread into both card kinds:
-cardBase = Struct({
-  id:             String,
-  name:           String,
-  domains:        Array(String),           // authored; domain ids (lint-checked only)
-  body:           String,                  // prose, not behaviour
-  age:            Number,
-  minimumPlayers: Number,                  // tier
-})
+cardIdentity = Struct({ id, name, body: String, age, minimumPlayers: Number })
 
 regularCardSchema = Struct({
-  ...cardBase,
-  kind:    Literal("regular"),
+  ...cardIdentity, kind: Literal("regular"),
+  domains: Array(String),              // authored; domain ids (lint)
   actions: Array(actionBindingSchema),
-})
-  type RegularCard
+})  type RegularCard
 
 mandateRowSchema = Struct({
-  subtype:     String,                     // must belong to one of the card's domains (lint)
+  subtype: String,                     // must be in the card's domain (lint)
   description: String,
   check: Struct({
-    mode:      Literals(["endOfGame", "event"]),   // ⚠ unused by the engine; D6 proposes deleting
-    predicate: String,                             // key into CHECKS (lint-checked only)
-    params:    opt(Record(String, Unknown)),       // ⚠ never decoded against the check's params
+    predicate: String,                 // key into CHECKS (lint); `mode` DELETED (D6)
+    params: Record(String, Unknown) = {},  // default {}; validated in lint (D4)
   }),
-})
-  type MandateRow
+})  type MandateRow
 
 mandateCardSchema = Struct({
-  ...cardBase,
-  kind:     Literal("mandate"),
-  vp:       Number,
+  ...cardIdentity, kind: Literal("mandate"),
+  domain: String,                      // SINGLE domain (D7) — no domains[0]
+  vp: Number,
   mandates: Array(mandateRowSchema),
-})
-  type MandateCard
+})  type MandateCard
 
-cardSchema = Union([regularCardSchema, mandateCardSchema])
-  type Card
+cardSchema = Union([regularCardSchema, mandateCardSchema])   type Card
+type CardIdentity = typeof cardIdentity.Type
 
-domainSchema = Struct({
-  id:       String,
-  label:    opt(String),
-  subtypes: Array(Struct({ id: String, label: opt(String) })),
-})
-  type Domain
-
-catalogSchema = Struct({
-  version:         String,
-  domains:         Array(domainSchema),
-  categoryDomains: Record(String, Array(String)),   // move category -> domain ids
-  cards:           Array(cardSchema),
-  chits:           Array(chitSchema),
-})
+domainSchema = Struct({ id, label: opt(String), subtypes: Array(Struct({ id, label: opt(String) })) })
+catalogSchema = Struct({ version, domains, categoryDomains: Record(String, Array(String)), cards, chits })
   type Catalog
 
-emptyCatalog: Catalog
-
-cardById(catalog, id) -> Option<Card>
-chitById(catalog, id) -> Option<Chit>
+emptyCatalog
+cardById(catalog, id) / chitById(catalog, id) -> Option   // Array.findFirst
 
 type LintIssue = { path: string; message: string }
-lintCatalog(catalog)      -> Result<Catalog, ReadonlyArray<LintIssue>>
-contentHash(catalog)      -> string            // deterministic, key-order independent
+lintCatalog(catalog) -> Result<Catalog, ReadonlyArray<LintIssue>>
+  // HashSet membership (D16), params decoded against MOVES/CHECKS schemas (D4),
+  // single-domain mandate subtypes, duplicate ids, category checks
+contentHash(catalog) -> string                            // structuralHash (ContentHash.ts)
 
-type CatalogError = { _tag: "InvalidJson" } | { _tag: "InvalidCatalog" } | { _tag: "LintFailed" }
-decodeCatalogJson(json)   -> Result<Catalog, CatalogError>       // parse -> decode -> lint
+interface CatalogIndex {
+  cardsById, chitsById: HashMap<string, ...>
+  chitsByDomain: HashMap<string, ReadonlyArray<Chit>>
+  mandateCards: ReadonlyArray<MandateCard>
+}
+indexCatalog(catalog) -> CatalogIndex                     // D8
+
+type CatalogError = InvalidJson | InvalidCatalog | LintFailed
+decodeCatalogJson(json) -> Result<Catalog, CatalogError>
 
 class CardCatalog extends Context.Service<CardCatalog, {
-  catalog: Catalog; version: string; hash: string
-  card: (id) => Option<Card>; chit: (id) => Option<Chit>
+  catalog; index; version; hash
+  card(id) -> Option<Card>; chit(id) -> Option<Chit>      // HashMap-backed
 }>
-CardCatalogFromJson(json)   -> Layer
+CardCatalogFromJson(json) -> Layer                        // decode + lint at startup
 CardCatalogFixture(catalog) -> Layer
 ```
+
+## Scoring.ts — mandate selectors
+
+```ts
+applicableMandate(nation, card, catalog) -> Option<MandateRow>   // card.domain (singular), findFirst chain
+mandateFulfilled(state, nation, card, catalog) -> boolean
+  // hardened: predicate id checked against CHECK_IDS HashSet -> false, never throws (D16)
+
+interface MandateStatus { color; cardId; row: Option<MandateRow>; fulfilled: boolean; vp: number }
+mandateStatus(state, catalog) -> ReadonlyArray<MandateStatus>              // full state, server/end-of-game (D6)
+mandateStatusForViewer(state, catalog, viewer) -> ReadonlyArray<...>       // viewer only; null = none
+victoryPoints(state, catalog, color) -> number                            // sum of fulfilled mandate vp
+```
+
+Mandates do **not** drive `endIf` (D6/D11).
 
 ## State.ts — the `G` shape
 
 ```ts
-class Config extends Schema.TaggedClass("State/Config", {
-  name: String, minPlayers: Number, maxPlayers: Number,
-})
-  ⚠ defined but referenced nowhere
+class Config extends TaggedClass("State/Config", { name, minPlayers, maxPlayers })  // Service.make arg (D25)
 
-phaseSchema = Literals(["action"])          // only one phase exists
-  type Phase
+phaseSchema = Literals(["action"])   type Phase
+reactionPhaseSchema = Literals(["interrupt","trigger"])   type ReactionPhase
 
 gameEventSchema = Struct({
-  seq:        Number,
-  move:       String,                       // registry key
-  categories: Array(String),                // ⚠ NOT narrowed to MoveCategoryId
-  actor:      colorSchema,
-  at:         opt(coordsSchema),
-  params:     Record(String, Unknown),
-  turn:       Number,
-})
-  type GameEvent
+  seq: Number, move: String,
+  categories: Array(moveCategorySchema),   // structural
+  tags: Array(tagSchema),                  // semantic event kinds (D28)
+  actor: colorSchema,
+  at: OptFromOpt(coordsSchema),
+  target: OptFromOpt(colorSchema),         // single optional target (D31)
+  params: Record(String, Unknown),
+  turn: Number,
+})  type GameEvent
 
-catalogPinSchema = Struct({ version: String, hash: String })
-  type CatalogPin
+reactionDeclarationSchema = Struct({ seq: Number, actor: colorSchema, move: String, params: Record(String, Unknown) })
+  type ReactionDeclaration
+pendingReactionsSchema = Struct({
+  event: gameEventSchema,
+  phase: reactionPhaseSchema,
+  eligible: Array(colorSchema),            // resolution order: target first, then seat order (D13)
+  declarations: Array(reactionDeclarationSchema),   // public, declaration order
+  passed: Array(colorSchema),
+})  type PendingReactions
 
-class State extends Schema.TaggedClass("State", {
-  tiles:   Array(tileSchema),               // flat; no index, no uniqueness guarantee
-  nations: Array(nationSchema),             // indexed by playerID
-  turn:    Number,                          // ⚠ duplicates ctx.currentPlayer
-  phase:   phaseSchema,                     // ⚠ duplicates ctx.phase
-  events:  Array(gameEventSchema),
-  catalog: catalogPinSchema,                // pins the match to a catalog version+hash
-})
+catalogPinSchema = Struct({ version, hash })   type CatalogPin
+terrainPinSchema = Struct({ version, hash })   type TerrainPin
 
-make(tiles, nations, catalog) -> State       // turn 0, phase "action", events []
+class State extends TaggedClass("State", {
+  tiles: Array(tileSchema), nations: Array(nationSchema), events: Array(gameEventSchema),
+  catalog: catalogPinSchema, terrain: terrainPinSchema,
+  pendingReactions: OptFromOpt(pendingReactionsSchema),   // None = no window (D47)
+}) {}
+
+make(tiles, nations, catalog, terrain) -> State   // events [], pendingReactions None
+
+// Framework boundary (D40): boardgame.io requires plain JSON, Effect Option is a class instance.
+type StateEncoded = Schema.Codec.Encoded<typeof State>
+encode(state: State) -> StateEncoded                      // Schema.encodeSync
+decodeUnknown(input: unknown) -> State                    // Schema.decodeUnknownSync
 ```
 
-## Setup.ts — per-match configuration (`setupData`)
+`State.turn` / `State.phase` are **gone** (D12).
+
+## Setup.ts — per-match `setupData`
 
 ```ts
-DEFAULT_NATION_NAMES   = 7 names ("Red Empire", ...)
-DEFAULT_LAND_TERRAIN   = "plains"
-DEFAULT_STRATEGY       = "frontier"
+DEFAULT_NATION_NAMES, DEFAULT_STRATEGY
+  // DEFAULT_LAND_TERRAIN and the per-match `terrain` option are GONE (D21)
 
-pieceLimitsOverrideSchema = Struct({
-  influence: opt(Number), religion: opt(Number), controlChits: opt(Number),
-  units: opt(Number), production: opt(Number), population: opt(Number), tradePosts: opt(Number),
-})
-  ⚠ accepts zero and negatives; unknown keys silently stripped, not rejected
+pieceLimitSchema = Int.check(>= 1, <= MAX_PIECE_LIMIT)     // closes the allocation DoS (D14)
+pieceLimitsOverrideSchema = Struct({ influence?: pieceLimitSchema, ... })  // each optional
+  // unknown keys REJECTED via a strict nested decode (onExcessProperty:"error", D26)
 
 setupOptionsSchema = Struct({
-  // spread of generateCoordsOpts minus playerCount and strategy:
-  seed:             Number = 0
-  target:           Number = 7        ⚠ no lower bound
-  noisePoolFraction:Number = 0.35     ⚠ no [0,1] bound
-  seedRingDist:     Number = 2        ⚠ no lower bound / no cross-check vs growthCap
-  growthCap:        Number = 4
-  strategy:         strategySchema = "frontier"
-  terrain:          opt(landTerrainSchema)
-  pieceLimits:      opt(pieceLimitsOverrideSchema)
-  nationNames:      opt(Array(String))
-  catalogVersion:   opt(String)
-})
-  type SetupOptions = Encoded (sparse; what clients send)
+  ...generationFields,                    // seed/target/noisePoolFraction/seedRingDist/growthCap
+  strategy = DEFAULT_STRATEGY,
+  pieceLimits: opt(pieceLimitsOverrideSchema),
+  nationNames: opt(Array(String)),
+  catalogVersion: opt(String),
+}).check(generationCrossFieldIssues)       // growthCap >= seedRingDist + 2 (D14/D30)
 
-type ResolvedSetupOptions = Omit<ResolvedGenerateCoordsOpts, "playerCount"> & {
-  terrain: LandTerrain
-  pieceLimits: PieceLimits            // ⚠ `as PieceLimits` cast in decodeSetupOptions is load-bearing
-  nationNames: ReadonlyArray<string>
-  catalogVersion: string | undefined
+ResolvedSetupOptions = Omit<ResolvedGenerateCoordsOpts, "playerCount"> & {
+  pieceLimits: PieceLimits; nationNames: ReadonlyArray<string>; catalogVersion: string | undefined
 }
-
-type SetupOptionsError = { _tag: "InvalidSetupOptions"; error: SchemaError }
 decodeSetupOptions(data) -> Result<ResolvedSetupOptions, SetupOptionsError>   // total, never throws
+  // limits merge without a cast; unknown top-level keys still ignored
 formatSetupError(err) -> string
 ```
 
 ## BoardGeneration.ts — generation options
 
 ```ts
-strategySchema = Literals(["lattice", "frontier"])
-  type Strategy
+strategySchema = Literals(["lattice","frontier"])
 
 generateCoordsOpts = Struct({
-  playerCount:      Number,                 // required; range-checked in code, [2, 7]
-  strategy:         strategySchema,         // required
-  seed:             Number = 0
-  target:           Number = 7              // ⚠ no lower bound -> target<1 gives 1-tile nations
-  noisePoolFraction:Number = 0.35           // ⚠ no [0,1] bound
-  seedRingDist:     Number = 2              // ⚠ no lower bound
-  growthCap:        Number = 4              // ⚠ no cross-field check vs seedRingDist
-})
-  type GenerateCoordsOpts          = Encoded (defaults optional)
-  type ResolvedGenerateCoordsOpts  = Type    (every field present)
+  playerCount: Number, strategy: strategySchema,
+  seed: Number = 0,
+  target: Int >= 1 = 7,                    // D15
+  noisePoolFraction: Number in [0,1] = 0.35,
+  seedRingDist: Int >= 1 = 2,
+  growthCap: Int >= 1 = 4,
+}).check(makeFilter(generationCrossFieldIssues))   // growthCap >= seedRingDist + 2 (D14)
+  type GenerateCoordsOpts / ResolvedGenerateCoordsOpts
 
-type GenerateCoordsError =
-  | { _tag: "InvalidOptions";      error: SchemaError }
-  | { _tag: "InvalidPlayerCount";  playerCount: number }
-  | { _tag: "InsufficientRoom";    nationId, actual, target, playerCount, growthCap, seedRingDist }
-
+GenerateCoordsError = InvalidOptions | InvalidPlayerCount | InsufficientRoom
 STRATEGIES = { lattice: Lattice, frontier: Frontier }
-generateCoords(opts)  -> Result<Array<Array<Coords>>, GenerateCoordsError>
-neutralCoords(nations)-> Array<Coords>        // sea = neighbours of land, minus land
+generateCoords(opts) -> Result<Array<Array<Coords>>, GenerateCoordsError>
+neutralCoords(nations) -> Array<Coords>
+```
+
+## Terrain.ts — configurable terrain (D21/D23/D33)
+
+```ts
+nationTerrainSchema = Struct({
+  id: NonEmptyString, name: String,
+  population: Int >= 0, populationText: String,
+  movement: Int >= 0, movementText: String,
+  assetId: String,
+  tileCount: Int >= 1,                     // draw-pool size
+})  type NationTerrain
+
+BORDER_TERRAIN_IDS = ["sea"] as const;  borderTerrainIdsSchema = Literals(BORDER_TERRAIN_IDS)
+borderTerrainSchema = Struct({ id: borderTerrainIdsSchema, name, population, populationText, movement, movementText, assetId, tileCount: Int >= 0 })
+allTerrainSchema = Union([nationTerrainSchema, borderTerrainSchema])   type Terrain
+
+nationTerrainIdsSchema(table) / allTerrainIdsSchema(table) -> Literals factory   // ids are configurable
+
+DEFAULT_NATION_TERRAIN (placeholder values), DEFAULT_BORDER_TERRAIN
+
+interface TerrainTable { nation; border; byId: HashMap; nationIds/allIds: HashSet; pin: {version,hash} }
+makeTerrainTable(nation, border, version?) -> Result<TerrainTable, TerrainTableError>
+terrainById, hasTerrain, terrainPopulation, terrainMovement, terrainPoolSize
+
+nationTerrainConfig: Config<ReadonlyArray<NationTerrain>>   // Config.schema(..., "terrain") + default
+class TerrainCatalog extends Context.Service<TerrainCatalog, TerrainTable>
+TerrainCatalogFromConfig -> Layer   // reads Effect Config; requires ConfigProvider
+TerrainCatalogFixture(table) -> Layer
+DEFAULT_TERRAIN_TABLE, terrainTableFromNation(nation)
+```
+
+## Random.ts / ContentHash.ts / View.ts / Reactions.ts (new modules)
+
+```ts
+// Random.ts
+nextRandom(seed) -> [value, nextSeed]                  // mulberry32
+shuffle(items, seed) -> [shuffled, nextSeed]
+weightedDraw(items, weightOf, count, seed) -> { picked; nextSeed }
+nationSeed(seed, nationId)
+
+// ContentHash.ts
+structuralHash(value) -> string                        // key-order independent
+
+// View.ts (D11)
+colorForPlayerId(state, playerID) -> Color | null
+redactForViewer(state, viewer) -> State                // empties hand/deck/mandates/mat.cards for non-owners
+
+// Reactions.ts (D13)
+type MovesRegistry = Record<string, MoveDefinition<any>>
+reactionBindings(nation, catalog) -> ReadonlyArray<ActionBinding>
+categoryForPhase(phase) -> "react" | "trigger"
+respondsToEvent(def, event, phase) -> boolean
+canReact(nation, catalog, event, phase, moves?) -> boolean
+eligibleReactors(state, catalog, event, phase, moves?) -> ReadonlyArray<Color>   // target first
+openWindow(state, catalog, event, phase, moves?) -> Option<PendingReactions>
+declare(window, actor, move, params, seq, moves?) -> Result<PendingReactions, ReactionError>
+pass(window, actor) -> Result<PendingReactions, ReactionError>
+isComplete(window) -> boolean
+orderedDeclarations(window) -> ReadonlyArray<ReactionDeclaration>
+resolveInterrupt(state, window, moves?) -> { state; event; vetoed }
+resolveTrigger(state, window, moves?) -> State         // terminal
+applyEvent(state, event, moves?) -> State
+logEvent(state, event) -> State
 ```
 
 ## Game.ts — the boardgame.io assembly
 
 ```ts
 class Service extends Context.Service<Service, {
-  make: (config: State.Config) => Game<State, {}, Setup.SetupOptions>
+  make(config: State.Config) -> Game<State.StateEncoded, {}, Setup.SetupOptions>
 }>
 
-ServiceLive : Layer   // requires CardCatalog
-ServiceDev  : Layer   // provided with Cards.emptyCatalog
+ServiceLive : Layer   // requires CardCatalog + TerrainCatalog
+ServiceDev  : Layer   // empty catalog + default terrain
+makeDevGame(config) -> Game   // convenience for tests
 
-// What `make` currently returns on the boardgame.io Game object:
+buildMoves(moves, catalog) -> MoveMap<State.StateEncoded, {}>   // game moves + system moves
+buildSystemMoves(catalog, moves) -> { declareReaction, passReaction }
+
+// What `make` returns:
 {
   name, minPlayers, maxPlayers,
-  validateSetupData: (data) => string | undefined,   // wraps decodeSetupOptions
-  setup: ({ ctx }, data) => State,                   // generates board + tiles + nations
+  validateSetupData(data) -> string | undefined,
+  setup({ctx}, data) -> StateEncoded,
+     // generate board -> weighted terrain draw (D23) -> tiles -> nations+embassies -> State.encode
+  moves: buildMoves(MOVES, catalog),
+     // per move: decode G -> decode params -> canApply -> propose event -> interrupt window
+     // (suspend or apply) -> log event -> trigger window. INVALID_MOVE on failure (D35/D40/D48).
+  phases: { action: { start: true } },
+  turn: { minMoves: 0, maxMoves: 1, onEnd: clears playArea },   // D37/D38
+  endIf: () => undefined,                                       // seam only (D39)
+  playerView({G, playerID}) -> decode -> redact -> encode,      // D11/D40
 }
-// ⚠ and nothing else: no moves, no turn, no phases, no endIf, no playerView
 ```
+
+No `State.turn` / `State.phase`; `ctx` is the single source of truth for turn/phase (D12).
 
 ---
 
 ## Cross-cutting observations
 
-**Narrowing is inconsistent.** `units.kind` and `influence.face` are literal unions; `production.kind`,
-`gameEvent.categories`, and `chit.subtype` are bare `String`. `population` has no distinguishing
-field at all.
+**Boundary encoding (D40).** `G` is stored in its `StateEncoded` form because boardgame.io's
+serializability plugin rejects any non-plain object and Effect `Option` is a class instance. The
+engine works with the decoded `State` form; `setup`, moves and `playerView` convert at the
+boundary. Everything else in this package is `Option`-based rather than `undefined`-based (D20).
 
-**Everything cross-referential is lint-only.** `actionBinding.move`, `check.predicate`,
-`card.domains`, `chit.domain`, `chit.subtype`, `categoryDomains` — all validated by `lintCatalog`
-and by nothing else. And `lintCatalog` currently uses the `in` operator, so `Object.prototype`
-members pass (see PLAN.md findings A/B/C).
+**Narrowing.** `units.kind`, `production.kind`, `influence.face`, `religion.face`, `mat.slots[].chit`,
+`gameEvent.categories`, `gameEvent.tags` and `respondsTo` are literal unions. `chit.subtype`,
+`card.domains`, `card.domain` and `terrain` remain validated strings (lint / terrain-table lookup).
 
-**No invariant is enforced anywhere.** `cubeSchema`'s `q+r+s===0`, `mat.cards` having 3 slots,
-territory disjointness, `Tile.color` matching some nation's `color`, `tiles` having no duplicate
-coords, `pieceLimits` agreeing with the actual inventory lengths — all are conventions.
+**Cross-references are lint + HashSet.** `actionBinding.move`, `check.predicate`, card domains,
+chit domain/subtype, `categoryDomains` are validated by `lintCatalog`, which now also decodes
+`params`/`check.params` against the referenced schema (D4) and uses `HashSet` membership so
+`Object.prototype` keys cannot pass (D16).
 
-**Two sources of truth.** `State.turn`/`State.phase` vs `ctx.currentPlayer`/`ctx.phase`;
-`State.events[].turn` vs both; mandate VP derived in `Scoring` vs `Nation.score`. (D12.)
+**No invariant enforced for:** `cubeSchema`'s `q+r+s===0`, board tile-coordinate uniqueness, and the
+"supply arrays are never resized" discipline (documented, tested indirectly).
 
-**No hidden information.** `hand`, `deck`, and `mandates` sit in the shared `G`. (D11.)
-
-**Unused.** `State.Config`; `MandateRow.check.mode`; `generateCoordsOpts`'s `target`,
-`noisePoolFraction`, `seedRingDist`, `growthCap` under the `lattice` strategy.
+**Still deferred:** game-end trigger (`endIf` inert, D39); the move set and tag vocabulary (D42/D44);
+reaction stage mirroring (D50); catalog content + admin-portal UI (D51); a real reaction-effect
+vocabulary beyond veto/event replacement.
