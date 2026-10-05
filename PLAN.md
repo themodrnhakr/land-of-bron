@@ -143,7 +143,7 @@ building) · **OPEN** (needs the user's input before any code).
 | D24 | `mat.cards` capacity. Keep the comment's "3 card slots" intent: add `MAX_MAT_CARDS = 3` and enforce it as **at most** 3 (`Schema.isMaxLength(3)`), so an over-full mat is unrepresentable while partial fills stay legal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | AUTONOMOUS |
 | D25 | `State.Config` is **kept**. It is the `Service.make` game-identity config (name + seat range), so SCHEMA.md's "referenced nowhere" was stale.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | AUTONOMOUS |
 | D26 | `pieceLimits` (D14). Unknown keys are **rejected** (a strict nested decode with `onExcessProperty: "error"`, scoped so unknown _top-level_ keys stay ignored). Caps are integers in `[1, MAX_PIECE_LIMIT]` with `MAX_PIECE_LIMIT = 100` (comfortably above any real cap; closes the allocation DoS). The resolved limits are **not** recorded in `State` — the inventory array length remains the single source of truth, and "supplies are never resized" stays a documented discipline with tests.                                                                                                                                                                                                                                                                                                     | AUTONOMOUS |
-| D27 | Narrow `production.kind` to `productionKinds = Literals(["farm"])` for consistency with `units.kind`. The vocabulary starts minimal and grows with content; no game content is invented.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | AUTONOMOUS |
+| D27 | **SUPERSEDED by D52** — the production/resource model is configurable (see §8). Originally: narrow `production.kind` to `productionKinds = Literals(["farm"])` for consistency with `units.kind`. The vocabulary starts minimal and grows with content; no game content is invented.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | AUTONOMOUS |
 | D28 | Tags vs categories (D13-Q4 / open question 11): keep **both axes**. `GameEvent.categories` narrows to `MoveCategoryId[]` (how a move is invoked); a new `tags: Tag[]` records what happened. `MoveDefinition` gains `tags` and `respondsTo: Tag[]`. `KNOWN_TAGS = ["action"]` — non-empty (a `Literals` union cannot be empty) and grows in Phase 4.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | AUTONOMOUS |
 | D29 | Terrain pin + seed (open question 12). The terrain table lives in a `TerrainCatalog` service; `State` gains its own `terrain: { version, hash }` pin (mirroring the catalog pin). The terrain draw is derived from the single match `seed` per nation (`nationSeed(seed, id)`), so one seed reproduces board **and** terrain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | AUTONOMOUS |
 | D30 | Validation placement (D14). Per-field ranges live in the field schemas; the cross-field `growthCap >= seedRingDist + 2` rule is a struct-level `Schema.makeFilter` applied to **both** `generateCoordsOpts` and `setupOptionsSchema`. Both surface as `InvalidOptions`; the `playerCount` range check stays in code as a typed `InvalidPlayerCount`.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | AUTONOMOUS |
@@ -569,3 +569,72 @@ exceeds `target`**; each nation draws `target` tiles **independently from its ow
 (per nation, with **no cross-nation uniqueness constraint**), **without replacement**, and places them
 randomly on its generated coords; sea (border terrain) is excluded. The draw is **seeded** for
 reproducibility.
+
+---
+
+## 8. Round 2 schema notes (resources, production, infrastructure)
+
+The user's second gap list (`USER_NOTES`), **superseding D27**. Answers to the batch-1 questions are
+folded in as decisions **D52–D57**.
+
+### 8.1 Resources & production → **D52**
+
+- **Resources** are a **configurable catalogue**: `{ id, name, tier: 1 | 2 }`. Tier I (basic) is
+  collected from terrain tiles; Tier II (advanced) is manufactured from basic resources.
+- **Production kinds** are a **configurable catalogue**: `{ id, name, tier, resourceCost:
+  Array<{ resourceId, amount }>, resourceProduced: Array<Array<{ resourceId, amount }>> }`. More than
+  one inner array in `resourceProduced` means **choose one set per turn**.
+- **Tile resources are derived from buildable production** — there is no separate per-tile resource
+  field.
+- `production.kind` therefore references a configurable production id, **not** the literal `["farm"]`
+  (D27 is dead).
+
+### 8.2 Terrain gains buildable production + caps → **D53**
+
+`nationTerrainSchema` gains `buildableProduction: Array<ProductionId>`, `maxProduction: Int` (max
+production **per tile**) and `maxTierTwoProduction: Int` (max Tier-II production **per tile**; e.g.
+plains: ≤ 4 total, ≤ 2 tier II). All configurable via Effect `Config`.
+
+### 8.3 Built facilities are pieces → **D54**
+
+Built structures are **nation pieces with `at`** (the existing `Nation.production` shape), not fields on
+`Tile`; `Tile` / terrain records only what is _buildable_. Confirmed for **production**, **defense
+structures** and **supply lines**. Each is a supply with a configurable `kind` catalogue: defense
+structures have a **per-type** configurable cap; supply lines a **per-nation** cap.
+
+### 8.4 Edge-based placement (railroads, ports) → **D55**
+
+Edges are encoded **`{ tile: Coords, edge: 0..5 }`** (six edges per hex). Helpers must make it easy to
+derive **both bordering tiles** of an edge (canonicalised so a shared edge is one value). A **port** is
+an edge whose two sides are nation terrain and sea; **railroads** are edges. Both railroads and ports
+have **per-nation caps** (configurable).
+
+### 8.5 Ships → **D56**
+
+Ships live on **sea tiles** (`at`). They are a **separate, configurable supply** (not `units`), one per
+nation and **coloured**. Caps are configurable: a **total** ship cap plus per-type caps for **merchant**
+and **naval**.
+
+### 8.6 Maintenance → **D57**
+
+Supply lines (and any other upkeep-bearing structure) encode a `maintenanceCost`
+(`Array<{ resourceId, amount }>`) now; the **turn-based upkeep rules are deferred**.
+
+### 8.7 Open questions (round 2)
+
+Resolved: (1) production caps are **per tile**; (2) **defense structures**, **supply lines**, **ships**,
+**railroads** and **ports** are all pieces with `at` and configurable caps (defense: per type; supply
+lines, railroads, ports: per nation). Still deferred: **port ship capacity vs the ship supply**
+(docking rules) — not needed now.
+
+### 8.8 Rework scope (implementation) — **Phase 7**
+
+This is a fresh chunk beyond the completed Phase 2–6:
+
+- Replace `Pieces.productionKinds = Literals(["farm"])` with a **configurable production catalogue**
+  and a **configurable resource catalogue** (Effect `Config`, pinned in `State` like terrain).
+- Extend `nationTerrainSchema` with `buildableProduction` + the two per-tile caps (D53).
+- Add piece supplies for **defense structures**, **supply lines**, and **ships**, with configurable caps.
+- Add an **edge** module (`{ tile, edge }` + both-tiles helper) and edge pieces (railroads, ports).
+- Encode `maintenanceCost` on supply lines; rework `Nation.production` to reference production ids.
+- Revisit `PIECE_LIMITS` / `makeNation` for the new supplies and per-nation caps.
