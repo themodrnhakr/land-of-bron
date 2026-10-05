@@ -10,6 +10,6 @@
   "dependencies": {
     "@land-of-bron/game": "workspace:*",
     "boardgame.io": "^0.50.2",
-    "effect": "beta"
+    "effect": "^4.0.1"
   }
 }
