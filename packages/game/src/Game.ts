@@ -4,12 +4,14 @@ import { Context, Effect, Layer, Option, Result, Schema } from "effect";
 import * as BoardGeneration from "./BoardGeneration.ts";
 import * as Cards from "./Cards.ts";
 import * as Coords from "./Coords.ts";
+import * as Defense from "./Defense.ts";
 import type { MoveContext, MoveDefinition, MoveMetadata } from "./Moves.ts";
 import { MOVES } from "./Moves.ts";
 import * as Nation from "./Nation.ts";
 import { type Color, colorSchema } from "./Nation.ts";
 import * as Random from "./Random.ts";
 import * as Reactions from "./Reactions.ts";
+import * as Resources from "./Resources.ts";
 import * as Setup from "./Setup.ts";
 import * as State from "./State.ts";
 import { type GameEvent, type PendingReactions, type Phase, State as GameState } from "./State.ts";
@@ -252,12 +254,21 @@ export class Service extends Context.Service<Service, {
   ) => import("boardgame.io").Game<State.StateEncoded, {}, Setup.SetupOptions>;
 }>()("GameService") {}
 
-/** The game service, requiring a `CardCatalog` and a `TerrainCatalog`. */
+/** The game service, requiring the card, terrain, production and defense catalogues. */
 export const ServiceLive = Layer.effect(
   Service,
   Effect.gen(function*() {
     const cards = yield* Cards.CardCatalog;
     const terrain = yield* Terrain.TerrainCatalog;
+    const production = yield* Resources.ProductionCatalog;
+    const defense = yield* Defense.DefenseCatalog;
+    // Cross-catalogue lint: every `buildableProduction` id named by a terrain
+    // must exist in the production catalogue (D52/D53).
+    yield* Effect.fromResult(Resources.lintTerrainProduction(terrain, production));
+    const supplySpec: Nation.NationSupplySpec = {
+      productionKind: production.production[0]?.id,
+      defenseTypes: Defense.defenseSupplySpec(defense),
+    };
 
     const make = (
       config: State.Config,
@@ -328,6 +339,7 @@ export const ServiceLive = Layer.effect(
             opts.nationNames[id] ?? "Nation " + (id + 1),
             opts.pieceLimits,
             colors,
+            supplySpec,
           );
           return { ...nation, mat: { ...nation.mat, slots } };
         });
@@ -339,6 +351,7 @@ export const ServiceLive = Layer.effect(
             nations,
             { version: cards.catalog.version, hash: cards.hash },
             terrain.pin,
+            production.pin,
           ),
         );
       },
@@ -371,12 +384,14 @@ export const ServiceLive = Layer.effect(
   }),
 );
 
-/** Dev layer: the game service with an empty catalog and the default terrain. */
+/** Dev layer: the game service with an empty catalog and the default catalogues. */
 export const ServiceDev = Layer.provide(
   ServiceLive,
-  Layer.merge(
+  Layer.mergeAll(
     Cards.CardCatalogFixture(Cards.emptyCatalog),
     Terrain.TerrainCatalogFixture(Terrain.DEFAULT_TERRAIN_TABLE),
+    Resources.ProductionCatalogFixture(Resources.DEFAULT_PRODUCTION_TABLE),
+    Defense.DefenseCatalogFixture(Defense.DEFAULT_DEFENSE_TABLE),
   ),
 );
 

@@ -60,6 +60,13 @@ export const terrainPinSchema = Schema.Struct({
 });
 export type TerrainPin = typeof terrainPinSchema.Type;
 
+/** The pinned resource + production-config identity for a match (D52). */
+export const productionPinSchema = Schema.Struct({
+  version: Schema.String,
+  hash: Schema.String,
+});
+export type ProductionPin = typeof productionPinSchema.Type;
+
 // ============================================================================
 // Reaction windows (D13)
 // ============================================================================
@@ -107,6 +114,7 @@ export class State extends Schema.TaggedClass<State>()("State", {
   events: Schema.Array(gameEventSchema),
   catalog: catalogPinSchema,
   terrain: terrainPinSchema,
+  production: productionPinSchema,
   // No open reaction window by default (D13).
   pendingReactions: Schema.OptionFromOptional(pendingReactionsSchema),
 }) {}
@@ -115,13 +123,23 @@ export class State extends Schema.TaggedClass<State>()("State", {
 // Factory
 // ============================================================================
 
-/** Build the initial state: an empty event log, pinned to the catalog + terrain. */
+/** Build the initial state: an empty event log, pinned to the catalog, terrain and production configs. */
 export const make = (
   tiles: Tile[],
   nations: Nation[],
   catalog: CatalogPin,
   terrain: TerrainPin,
-): State => new State({ tiles, nations, events: [], catalog, terrain, pendingReactions: Option.none() });
+  production: ProductionPin,
+): State =>
+  new State({
+    tiles,
+    nations,
+    events: [],
+    catalog,
+    terrain,
+    production,
+    pendingReactions: Option.none(),
+  });
 
 // ============================================================================
 // Framework boundary (D40)

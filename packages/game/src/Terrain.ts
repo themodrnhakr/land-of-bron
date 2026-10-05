@@ -1,5 +1,6 @@
 import { Array, Config, Context, Effect, HashMap, HashSet, Layer, Option, Result, Schema } from "effect";
 import { structuralHash } from "./ContentHash.ts";
+import { productionIdSchema } from "./Resources.ts";
 
 // ============================================================================
 // Terrain definitions (D21)
@@ -24,7 +25,23 @@ export const nationTerrainSchema = Schema.Struct({
   movementText: Schema.String, // movement display text
   assetId: Schema.String, // client asset id
   tileCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)), // tiles per nation in the draw pool
-});
+  // --- buildable production + per-tile caps (D53) ---
+  // The production ids are validated against the configured catalogue
+  // (`Resources.lintTerrainProduction`), not a static union. Tile resources are
+  // derived from these buildable production kinds (D52).
+  buildableProduction: Schema.Array(productionIdSchema),
+  maxProduction: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)), // max produced pieces per tile
+  maxTierTwoProduction: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)), // max Tier-II pieces per tile
+}).check(
+  Schema.makeFilter((t: { maxProduction: number; maxTierTwoProduction: number }) =>
+    t.maxTierTwoProduction > t.maxProduction
+      ? [{
+        path: ["maxTierTwoProduction"],
+        issue: `maxTierTwoProduction (${t.maxTierTwoProduction}) must not exceed maxProduction (${t.maxProduction})`,
+      }]
+      : []
+  ),
+);
 export type NationTerrain = typeof nationTerrainSchema.Type;
 
 /** The border ("sea") terrain ids are hardcoded. */
@@ -85,6 +102,10 @@ export const DEFAULT_NATION_TERRAIN: ReadonlyArray<NationTerrain> = [
     movementText: "2",
     assetId: "terrain/plains",
     tileCount: 4,
+    // Placeholder caps, matching the D53 example (plains: <= 4 total, <= 2 tier II).
+    buildableProduction: ["farm", "workshop"],
+    maxProduction: 4,
+    maxTierTwoProduction: 2,
   },
   {
     id: "forest",
@@ -95,6 +116,9 @@ export const DEFAULT_NATION_TERRAIN: ReadonlyArray<NationTerrain> = [
     movementText: "1",
     assetId: "terrain/forest",
     tileCount: 3,
+    buildableProduction: ["farm", "lumberCamp"],
+    maxProduction: 3,
+    maxTierTwoProduction: 1,
   },
   {
     id: "mountain",
@@ -105,6 +129,9 @@ export const DEFAULT_NATION_TERRAIN: ReadonlyArray<NationTerrain> = [
     movementText: "1",
     assetId: "terrain/mountain",
     tileCount: 2,
+    buildableProduction: ["mine", "workshop"],
+    maxProduction: 2,
+    maxTierTwoProduction: 1,
   },
   {
     id: "desert",
@@ -115,6 +142,9 @@ export const DEFAULT_NATION_TERRAIN: ReadonlyArray<NationTerrain> = [
     movementText: "1",
     assetId: "terrain/desert",
     tileCount: 1,
+    buildableProduction: ["farm"],
+    maxProduction: 1,
+    maxTierTwoProduction: 0,
   },
 ];
 

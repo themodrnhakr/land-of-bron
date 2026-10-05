@@ -78,6 +78,29 @@ describe("decodeSetupOptions: overrides", () => {
     expect(failure._tag).toBe("InvalidSetupOptions");
   });
 
+  test("carries the new infrastructure caps and defaults (D54-D56)", () => {
+    const opts = expectOk({});
+    expect(opts.pieceLimits.supplyLines).toBe(Pieces.PIECE_LIMITS.supplyLines);
+    expect(opts.pieceLimits.railroads).toBe(Pieces.PIECE_LIMITS.railroads);
+    expect(opts.pieceLimits.ports).toBe(Pieces.PIECE_LIMITS.ports);
+    expect(opts.pieceLimits.ships).toBe(Pieces.PIECE_LIMITS.ships);
+    expect(opts.pieceLimits.merchantShips).toBe(Pieces.PIECE_LIMITS.merchantShips);
+    expect(opts.pieceLimits.navalShips).toBe(Pieces.PIECE_LIMITS.navalShips);
+    expect(expectOk({ pieceLimits: { railroads: 2, ports: 1, supplyLines: 3 } }).pieceLimits.railroads)
+      .toBe(2);
+  });
+
+  test("rejects mutually inconsistent ship caps (D56)", () => {
+    // Each type must fit the total...
+    expectErr({ pieceLimits: { ships: 4, merchantShips: 5, navalShips: 1 } });
+    expectErr({ pieceLimits: { ships: 4, merchantShips: 1, navalShips: 5 } });
+    // ...and together they must be able to fill it.
+    expectErr({ pieceLimits: { ships: 6, merchantShips: 1, navalShips: 1 } });
+    // A feasible configuration is accepted.
+    expect(expectOk({ pieceLimits: { ships: 4, merchantShips: 2, navalShips: 2 } }).pieceLimits.ships)
+      .toBe(4);
+  });
+
   test("rejects zero, negative, fractional and over-cap pieceLimits (D14)", () => {
     // The old `KNOWN GAP` test pinned acceptance of 0 and negatives; the caps
     // are now integers in [1, MAX_PIECE_LIMIT], which also closes the

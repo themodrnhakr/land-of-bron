@@ -11,6 +11,9 @@ const def = (id: string, tileCount = 1): Terrain.NationTerrain => ({
   movementText: "1",
   assetId: `a/${id}`,
   tileCount,
+  buildableProduction: [],
+  maxProduction: 2,
+  maxTierTwoProduction: 1,
 });
 
 describe("makeTerrainTable", () => {
@@ -104,6 +107,14 @@ describe("nationTerrainConfig (D21)", () => {
 
   test("rejects an invalid terrain definition", () => {
     const bad = [{ ...def("swamp"), population: -1 }];
+    const exit = Effect.runSyncExit(
+      Terrain.nationTerrainConfig.parse(ConfigProvider.fromUnknown({ terrain: bad })),
+    );
+    expect(exit._tag).toBe("Failure");
+  });
+
+  test("rejects a terrain whose tier-II cap exceeds its total production cap (D53)", () => {
+    const bad = [{ ...def("swamp"), maxProduction: 1, maxTierTwoProduction: 2 }];
     const exit = Effect.runSyncExit(
       Terrain.nationTerrainConfig.parse(ConfigProvider.fromUnknown({ terrain: bad })),
     );

@@ -60,3 +60,32 @@ describe("PIECE_LIMIT_KEYS", () => {
     expect(new Set<string>(Pieces.PIECE_LIMIT_KEYS)).toEqual(new Set(Object.keys(Pieces.PIECE_LIMITS)));
   });
 });
+
+describe("shipCapIssues (D56)", () => {
+  test("accepts the defaults", () => {
+    expect(Pieces.shipCapIssues(Pieces.PIECE_LIMITS)).toEqual([]);
+  });
+
+  test("rejects a per-type cap above the total", () => {
+    expect(Pieces.shipCapIssues({ ships: 4, merchantShips: 5, navalShips: 1 }).length).toBeGreaterThan(0);
+    expect(Pieces.shipCapIssues({ ships: 4, merchantShips: 1, navalShips: 5 }).length).toBeGreaterThan(0);
+  });
+
+  test("rejects per-type caps that cannot cover the total", () => {
+    expect(Pieces.shipCapIssues({ ships: 6, merchantShips: 1, navalShips: 1 }).length).toBeGreaterThan(0);
+    expect(Pieces.shipCapIssues({ ships: 4, merchantShips: 2, navalShips: 2 })).toEqual([]);
+  });
+});
+
+describe("edge-located supplies (D55)", () => {
+  test("makeEdgeSupply starts every piece pooled and place/returnToPool use edge locations", () => {
+    const supply = Pieces.makeEdgeSupply(2, {});
+    expect(supply).toHaveLength(2);
+    for (const piece of supply) expect(Option.isNone(piece.at)).toBe(true);
+    const placed = Pieces.place(supply[0]!, { tile: Coords.ORIGIN, edge: 0 });
+    expect(placed.at).toEqual(Option.some({ tile: Coords.ORIGIN, edge: 0 }));
+    expect(Option.isNone(supply[0]!.at)).toBe(true);
+    expect(Option.isNone(Pieces.returnToPool(placed).at)).toBe(true);
+    expect(Pieces.onBoardCount([placed, supply[1]!])).toBe(1);
+  });
+});

@@ -43,6 +43,15 @@ export * as BoardGenerationStrategies from "./BoardGenerationStrategies.ts";
 /** Terrain definitions, the normalized terrain table, and Effect Config wiring. */
 export * as Terrain from "./Terrain.ts";
 
+/** Resource & production catalogues: schemas, normalized table, lint, service (D52). */
+export * as Resources from "./Resources.ts";
+
+/** Defense-structure catalogue: schemas, table, lint, service (D54). */
+export * as Defense from "./Defense.ts";
+
+/** Hex-edge geometry and the two-bordering-tiles helper (D55). */
+export * as Edges from "./Edges.ts";
+
 /** Seeded PRNG helpers shared by generation and terrain selection. */
 export * as Random from "./Random.ts";
 

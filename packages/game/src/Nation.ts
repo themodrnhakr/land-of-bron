@@ -1,15 +1,20 @@
 import { Option, Schema } from "effect";
 import * as Coords from "./Coords.ts";
+import { edgeSchema } from "./Edges.ts";
 import { actionBindingSchema } from "./Moves.ts";
 import {
+  defenseStructureKindSchema,
   influenceFaces,
+  makeEdgeSupply,
   makeSupply,
   PIECE_LIMITS,
   type PieceLimits,
-  productionKinds,
+  productionIdSchema,
   religionFaces,
+  shipKinds,
   unitKinds,
 } from "./Pieces.ts";
+import { DEFAULT_PRODUCTION_KIND, type ResourceAmount, resourceAmountSchema } from "./Resources.ts";
 
 // ============================================================================
 // Identity
@@ -101,7 +106,30 @@ export const nationSchema = Schema.Struct({
     at: Schema.OptionFromOptional(Coords.coordsSchema),
   })),
   production: Schema.Array(Schema.Struct({
-    kind: productionKinds,
+    kind: productionIdSchema,
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
+  })),
+  // --- built facilities (D54) ---
+  // Defense structures, one type per catalogue entry, capped per type (D54).
+  defenseStructures: Schema.Array(Schema.Struct({
+    kind: defenseStructureKindSchema,
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
+  })),
+  // Supply lines carry their (deferred) upkeep cost (D57).
+  supplyLines: Schema.Array(Schema.Struct({
+    at: Schema.OptionFromOptional(Coords.coordsSchema),
+    maintenanceCost: Schema.Array(resourceAmountSchema),
+  })),
+  // --- edge pieces (D55) ---
+  railroads: Schema.Array(Schema.Struct({
+    at: Schema.OptionFromOptional(edgeSchema),
+  })),
+  ports: Schema.Array(Schema.Struct({
+    at: Schema.OptionFromOptional(edgeSchema),
+  })),
+  // --- ships (D56): a separate, nation-coloured sea supply ---
+  ships: Schema.Array(Schema.Struct({
+    kind: shipKinds,
     at: Schema.OptionFromOptional(Coords.coordsSchema),
   })),
   population: Schema.Array(Schema.Struct({
@@ -127,18 +155,50 @@ export type Embassy = typeof nationSchema.fields.embassy.Type[number];
 // ============================================================================
 
 /**
+ * Options that let `setup` build a nation's configurable supplies from the
+ * catalogues (production kind, defense types + per-type caps, supply-line
+ * upkeep). All optional so direct `makeNation` calls stay ergonomic.
+ */
+export interface NationSupplySpec {
+  /** Default kind for the production pool (a configured production id). */
+  readonly productionKind?: string;
+  /** Defense types and their per-nation caps (D54). */
+  readonly defenseTypes?: ReadonlyArray<{ readonly id: string; readonly cap: number }>;
+  /** Encoded (deferred) upkeep cost applied to every supply line (D57). */
+  readonly supplyLineMaintenance?: ReadonlyArray<ResourceAmount>;
+}
+
+/**
+ * Build the nation's ship pool (D56): `ships` pieces, `merchantShips`
+ * merchants and `navalShips` navies, with any infeasible remainder filled as
+ * merchants. `Setup` rejects infeasible caps before this runs.
+ */
+const makeShipSupply = (limits: PieceLimits) => {
+  const merchants = Math.min(limits.merchantShips, limits.ships);
+  const navies = Math.min(limits.navalShips, limits.ships - merchants);
+  const filler = limits.ships - merchants - navies;
+  return [
+    ...makeSupply(merchants, { kind: "merchant" as const }),
+    ...makeSupply(navies, { kind: "naval" as const }),
+    ...makeSupply(filler, { kind: "merchant" as const }),
+  ];
+};
+
+/**
  * Build a fresh nation: full supplies in the pool, empty zones, and one empty
  * embassy slot per *other* nation (D22).
  *
  * `limits` defaults to the standard caps; setup can pass per-match overrides.
  * `otherColors` are the other seats in the match; each yields an embassy entry
- * naming that nation as host.
+ * naming that nation as host. `spec` fills the configurable supplies from the
+ * production/defense catalogues.
  */
 export const makeNation = (
   color: Color,
   name: string,
   limits: PieceLimits = PIECE_LIMITS,
   otherColors: ReadonlyArray<Color> = [],
+  spec: NationSupplySpec = {},
 ): Nation => ({
   color,
   name,
@@ -156,7 +216,12 @@ export const makeNation = (
   religion: makeSupply(limits.religion, { face: "proselytized" }),
   controlChits: makeSupply(limits.controlChits, {}),
   units: makeSupply(limits.units, { kind: "army" }),
-  production: makeSupply(limits.production, { kind: "farm" }),
+  production: makeSupply(limits.production, { kind: spec.productionKind ?? DEFAULT_PRODUCTION_KIND }),
+  defenseStructures: (spec.defenseTypes ?? []).flatMap((t) => makeSupply(t.cap, { kind: t.id })),
+  supplyLines: makeSupply(limits.supplyLines, { maintenanceCost: spec.supplyLineMaintenance ?? [] }),
+  railroads: makeEdgeSupply(limits.railroads, {}),
+  ports: makeEdgeSupply(limits.ports, {}),
+  ships: makeShipSupply(limits),
   population: makeSupply(limits.population, {}),
   tradePosts: makeSupply(limits.tradePosts, {}),
   embassy: otherColors.filter((c) => c !== color).map((host) => ({ host })),

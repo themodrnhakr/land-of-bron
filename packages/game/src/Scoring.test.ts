@@ -115,9 +115,10 @@ const makeNation = (opts: NationOptions = {}): Nation => {
 };
 
 const TERRAIN_PIN = { version: "test", hash: "test-terrain" };
+const PRODUCTION_PIN = { version: "test", hash: "test-production" };
 
 const makeState = (nation: Nation): State.State =>
-  State.make([], [nation], { version: "test", hash: "test-hash" }, TERRAIN_PIN);
+  State.make([], [nation], { version: "test", hash: "test-hash" }, TERRAIN_PIN, PRODUCTION_PIN);
 
 // ============================================================================
 // applicableMandate
@@ -243,7 +244,7 @@ describe("mandateStatus", () => {
   test("mandateStatusForViewer returns only the viewer's holdings", () => {
     const red = makeNation({ chit: "chit-conquest", mandates: ["mandate-conquest"] });
     const blue: Nation = { ...NationModule.makeNation("blue", "Blue"), mandates: ["mandate-siege"] };
-    const state = State.make([], [red, blue], { version: "test", hash: "h" }, TERRAIN_PIN);
+    const state = State.make([], [red, blue], { version: "test", hash: "h" }, TERRAIN_PIN, PRODUCTION_PIN);
     expect(Scoring.mandateStatusForViewer(state, catalog, "red").map((s) => s.color)).toEqual(["red"]);
     expect(Scoring.mandateStatusForViewer(state, catalog, "blue").map((s) => s.color)).toEqual(["blue"]);
   });

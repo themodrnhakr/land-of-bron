@@ -5,7 +5,7 @@ import {
   type ResolvedGenerateCoordsOpts,
   strategySchema,
 } from "./BoardGeneration.ts";
-import { MAX_PIECE_LIMIT, PIECE_LIMIT_KEYS, PIECE_LIMITS, type PieceLimits } from "./Pieces.ts";
+import { MAX_PIECE_LIMIT, PIECE_LIMIT_KEYS, PIECE_LIMITS, type PieceLimits, shipCapIssues } from "./Pieces.ts";
 
 // ============================================================================
 // Per-match setup configuration (boardgame.io `setupData`)
@@ -59,8 +59,24 @@ export const pieceLimitsOverrideSchema = Schema.Struct({
   production: Schema.optional(pieceLimitSchema),
   population: Schema.optional(pieceLimitSchema),
   tradePosts: Schema.optional(pieceLimitSchema),
+  supplyLines: Schema.optional(pieceLimitSchema),
+  railroads: Schema.optional(pieceLimitSchema),
+  ports: Schema.optional(pieceLimitSchema),
+  ships: Schema.optional(pieceLimitSchema),
+  merchantShips: Schema.optional(pieceLimitSchema),
+  navalShips: Schema.optional(pieceLimitSchema),
 });
 export type PieceLimitsOverride = typeof pieceLimitsOverrideSchema.Type;
+
+/**
+ * Cross-field check for the resolved ship caps (D56): each per-type cap must
+ * fit the total, and the two types must be able to fill it.
+ */
+const shipCapsCheckSchema = Schema.Struct({
+  ships: pieceLimitSchema,
+  merchantShips: pieceLimitSchema,
+  navalShips: pieceLimitSchema,
+}).check(Schema.makeFilter((limits) => shipCapIssues(limits)));
 
 /**
  * Client-provided per-match configuration, sent as `setupData` when creating
@@ -131,6 +147,15 @@ export const decodeSetupOptions = (
       const value = o.pieceLimits[key];
       if (value !== undefined) limits[key] = value;
     }
+  }
+  // Third pass: the resolved ship caps must be mutually consistent (D56).
+  const shipCaps = Schema.decodeUnknownResult(shipCapsCheckSchema)({
+    ships: limits.ships,
+    merchantShips: limits.merchantShips,
+    navalShips: limits.navalShips,
+  });
+  if (Result.isFailure(shipCaps)) {
+    return Result.fail({ _tag: "InvalidSetupOptions", error: shipCaps.failure });
   }
   return Result.succeed({
     strategy: o.strategy,

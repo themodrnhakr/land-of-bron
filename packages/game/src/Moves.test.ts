@@ -10,6 +10,7 @@ import * as Tile from "./Tile.ts";
 
 const CATALOG_PIN = { version: "1", hash: "catalog" };
 const TERRAIN_PIN = { version: "1", hash: "terrain" };
+const PRODUCTION_PIN = { version: "1", hash: "production" };
 
 const state = (): State.State =>
   State.make(
@@ -21,6 +22,7 @@ const state = (): State.State =>
     [Nation.makeNation("red", "Red")],
     CATALOG_PIN,
     TERRAIN_PIN,
+    PRODUCTION_PIN,
   );
 
 const ctx = (over: Partial<Moves.MoveContext> = {}): Moves.MoveContext => ({

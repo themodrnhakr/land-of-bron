@@ -16,6 +16,7 @@ import * as Tile from "./Tile.ts";
 
 const CATALOG_PIN = { version: "1", hash: "c" };
 const TERRAIN_PIN = { version: "1", hash: "t" };
+const PRODUCTION_PIN = { version: "1", hash: "p" };
 
 const withScore = (state: State.State, color: Color, delta: number): State.State =>
   new State.State({
@@ -81,6 +82,7 @@ const seededState = (): State.State => {
     ],
     CATALOG_PIN,
     TERRAIN_PIN,
+    PRODUCTION_PIN,
   );
 };
 

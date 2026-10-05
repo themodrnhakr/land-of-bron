@@ -53,6 +53,21 @@ describe("Game assembly (Phase 3)", () => {
     expect(state.ctx.numPlayers).toBe(2);
   });
 
+  test("pins the production config and fills the new supplies (D52-D56)", () => {
+    const { client } = makeClient();
+    const state = client.getState();
+    expect(state).not.toBeNull();
+    if (state === null) return;
+    expect(state.G.production.hash.length).toBeGreaterThan(0);
+    const red = state.G.nations[0]!;
+    expect(red.defenseStructures).toHaveLength(6); // default palisade 4 + bastion 2
+    expect(red.supplyLines).toHaveLength(4);
+    expect(red.railroads).toHaveLength(6);
+    expect(red.ports).toHaveLength(3);
+    expect(red.ships).toHaveLength(6);
+    expect(red.production).toHaveLength(6);
+  });
+
   test("makes a move and logs exactly one replayable GameEvent", () => {
     const { client } = makeClient();
     move(client, "pass");
