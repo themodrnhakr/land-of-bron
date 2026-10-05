@@ -1,9 +1,44 @@
 import { describe, expect, test } from "bun:test";
-import { Result } from "effect";
-import { assert as fcAssert, integer, property } from "effect/testing/FastCheck";
+import { Effect, Result, Schema } from "effect";
+import * as Arbitrary from "effect/Arbitrary";
 import type { GenerateCoordsError } from "./BoardGeneration.ts";
 import * as BoardGeneration from "./BoardGeneration.ts";
 import * as Coords from "./Coords.ts";
+
+// ----------------------------------------------------------------------------
+// Property-test harness
+// ----------------------------------------------------------------------------
+//
+// The pre-4.0 `effect/testing/FastCheck` re-export is gone in the pinned
+// `effect` release. Property checks now go through the Effect-native
+// `Arbitrary` module (still no direct `fast-check` dependency): a bounded
+// integer generator, combined with `Arbitrary.all`, run with `checkEffect`.
+
+const integerArb = (min: number, max: number): Arbitrary.Arbitrary<number> =>
+  Arbitrary.schema(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(min), Schema.isLessThanOrEqualTo(max)),
+  );
+
+/**
+ * Run a property over N bounded-integer arguments. The predicate may use
+ * `expect`; a thrown assertion propagates as a check failure.
+ */
+const fcProperty = (
+  ranges: ReadonlyArray<{ readonly min: number; readonly max: number }>,
+  predicate: (...values: Array<number>) => void,
+  runs: number,
+): void => {
+  const combined = Arbitrary.all(ranges.map((r) => integerArb(r.min, r.max)));
+  const result = Effect.runSync(
+    Arbitrary.checkEffect(combined, (values) => {
+      predicate(...values);
+      return true;
+    }, { runs }),
+  );
+  if (result._tag !== "Passed") {
+    throw new Error(Arbitrary.formatCheckFailure(result) ?? "property falsified");
+  }
+};
 
 // ============================================================================
 // Helpers
@@ -143,63 +178,53 @@ describe("generateCoords: frontier", () => {
   });
 
   test("every nation gets exactly `target` tiles, for 2-7 players and a range of seeds", () => {
-    fcAssert(
-      property(
-        integer({ min: 2, max: 7 }),
-        integer({ min: 0, max: 500 }),
-        (playerCount, seed) => {
-          const result = BoardGeneration.generateCoords({
-            playerCount,
-            strategy: "frontier",
-            seed,
-          });
-          expect(Result.isSuccess(result)).toBe(true);
-          if (Result.isFailure(result)) return;
-          expect(result.success).toHaveLength(playerCount);
-          for (const territory of result.success) expect(territory).toHaveLength(7);
-        },
-      ),
-      { numRuns: 60 },
+    fcProperty(
+      [{ min: 2, max: 7 }, { min: 0, max: 500 }],
+      (playerCount, seed) => {
+        const result = BoardGeneration.generateCoords({
+          playerCount,
+          strategy: "frontier",
+          seed,
+        });
+        expect(Result.isSuccess(result)).toBe(true);
+        if (Result.isFailure(result)) return;
+        expect(result.success).toHaveLength(playerCount);
+        for (const territory of result.success) expect(territory).toHaveLength(7);
+      },
+      60,
     );
   });
 
   test("honours a non-default target, failing with InsufficientRoom only when there is genuinely no room", () => {
-    fcAssert(
-      property(
-        integer({ min: 2, max: 7 }),
-        integer({ min: 1, max: 12 }),
-        integer({ min: 0, max: 300 }),
-        (playerCount, target, seed) => {
-          const result = BoardGeneration.generateCoords({
-            playerCount,
-            strategy: "frontier",
-            seed,
-            target,
-          });
-          if (Result.isFailure(result)) {
-            expect(result.failure._tag).toBe("InsufficientRoom");
-            return;
-          }
-          for (const territory of result.success) expect(territory).toHaveLength(target);
-        },
-      ),
-      { numRuns: 80 },
+    fcProperty(
+      [{ min: 2, max: 7 }, { min: 1, max: 12 }, { min: 0, max: 300 }],
+      (playerCount, target, seed) => {
+        const result = BoardGeneration.generateCoords({
+          playerCount,
+          strategy: "frontier",
+          seed,
+          target,
+        });
+        if (Result.isFailure(result)) {
+          expect(result.failure._tag).toBe("InsufficientRoom");
+          return;
+        }
+        for (const territory of result.success) expect(territory).toHaveLength(target);
+      },
+      80,
     );
   });
 
   test("territories are disjoint, contiguous and gap-free for a range of seeds", () => {
-    fcAssert(
-      property(
-        integer({ min: 2, max: 7 }),
-        integer({ min: 0, max: 500 }),
-        (playerCount, seed) => {
-          const territories = expectOk(
-            BoardGeneration.generateCoords({ playerCount, strategy: "frontier", seed }),
-          );
-          expectValidBoard(territories);
-        },
-      ),
-      { numRuns: 40 },
+    fcProperty(
+      [{ min: 2, max: 7 }, { min: 0, max: 500 }],
+      (playerCount, seed) => {
+        const territories = expectOk(
+          BoardGeneration.generateCoords({ playerCount, strategy: "frontier", seed }),
+        );
+        expectValidBoard(territories);
+      },
+      40,
     );
   });
 
@@ -234,8 +259,9 @@ describe("generateCoords: frontier", () => {
 
 describe("generateCoords: lattice", () => {
   test("gives every nation the same 7-tile blob, with no overlaps and no gaps, for 2-7 players", () => {
-    fcAssert(
-      property(integer({ min: 2, max: 7 }), (playerCount) => {
+    fcProperty(
+      [{ min: 2, max: 7 }],
+      (playerCount) => {
         const territories = expectOk(
           BoardGeneration.generateCoords({ playerCount, strategy: "lattice" }),
         );
@@ -259,8 +285,8 @@ describe("generateCoords: lattice", () => {
           }
         }
         expect(seen.size).toBe(union.size);
-      }),
-      { numRuns: 6 },
+      },
+      6,
     );
   });
 

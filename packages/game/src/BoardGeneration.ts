@@ -1,5 +1,4 @@
 import { Array, Effect, HashSet, pipe, Result, Schema } from "effect";
-import type { SchemaError } from "effect";
 import { Frontier, Lattice } from "./BoardGenerationStrategies.ts";
 import * as Coords from "./Coords.ts";
 
@@ -110,7 +109,7 @@ export type ResolvedGenerateCoordsOpts = typeof generateCoordsOpts.Type;
 /** Options failed to decode (unknown strategy, non-numeric field, ...). */
 export type InvalidOptionsError = {
   readonly _tag: "InvalidOptions";
-  readonly error: SchemaError.SchemaError;
+  readonly error: Schema.SchemaError;
 };
 
 /** `playerCount` is not an integer within the supported range [2, 7]. */

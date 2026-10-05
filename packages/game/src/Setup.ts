@@ -1,5 +1,4 @@
 import { Effect, Result, Schema } from "effect";
-import type { SchemaError } from "effect";
 import {
   generateCoordsOpts,
   generationCrossFieldIssues,
@@ -95,7 +94,7 @@ export type ResolvedSetupOptions =
 /** Options failed to decode (unknown strategy, out-of-range field, ...). */
 export type SetupOptionsError = {
   readonly _tag: "InvalidSetupOptions";
-  readonly error: SchemaError.SchemaError;
+  readonly error: Schema.SchemaError;
 };
 
 /**
