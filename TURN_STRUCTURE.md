@@ -209,7 +209,35 @@ following is a *working assumption*, not a settled rule.
   - **Build** — one per turn. Construct a structure (e.g. a trading post, a production facility).
     Building also **spends the structure's resource cost** (user: "presumably in most situations", so
     exceptions may exist).
+    - **Placement [SETTLED, general]:**
+      - **Production facilities** — only on a tile the player **controls** whose **home colour is their
+        own** (the same restriction as recruiting).
+      - **Embassy** — starts **unplaced** (D69); building it places it on another player's **capital**.
+        One embassy per opponent, so it is a **one-time build**.
+      - **Trading post** — requires an **embassy** with that player; placed on a tile that player
+        controls of their own nation colour.
+      - **Defense structures** — any tile the player **controls**, regardless of home colour
+        **[SETTLED]**.
+      - **Supply lines** — placed on tiles in the path of advancing armies (see "Supply lines" below).
+      - Additional requirements for embassies and trading posts are **TBD**.
   - **Move** — one per turn. Move a unit (e.g. an army, a missionary).
+    - **Without railroads:** one move takes **any number of army units** from one tile to an **adjacent
+      tile**.
+    - **With railroads you control (control rules TBD):** a **limited number** of army units can ride a
+      **contiguous railroad** any distance and deposit on an adjacent tile. The railroad move limit is
+      **TBD** (possibly configurable).
+    - **Missionaries move the same way** **[SETTLED]**. In **Phase Two**, armies and missionaries may only
+      move **within the player's own nation** — never into another nation's territory.
+  - **Recruit** — one per turn. Adds **reserves** to a tile. Reserves are **not** army units: they
+    accumulate on the tile and can later be **converted into army units**.
+    - Reserves live **on the tile** **[SETTLED]**. **No cap for now** (a cap may be added later).
+    - Recruiting reserves **consumes the recruitment pool** **[SETTLED]**.
+    - Conversion to army units may be done **at any time**, **costs resources**, and does **not** consume
+      a turn pool **[SETTLED]**.
+    - The **reserves-per-unit ratio** and the **conversion resource cost** are both **configurable**.
+    - **Target restriction [SETTLED]:** the recruit target must be a tile the player **controls** whose
+      **home colour is the player's own** (`Tile.color === actor`). A controlled tile of another colour
+      cannot be recruited to. Choosing the tile is part of the action.
   - **Attack** — one per turn, **Phase Three only** **[SETTLED: scope]**. It is the single pool for
     **all** Phase Three inter-player interaction — hostile (military conflict) and non-hostile (trade,
     religious influence) alike. The name is expected to generalise (e.g. to "interact").
@@ -220,10 +248,15 @@ following is a *working assumption*, not a settled rule.
 
 ### Open questions
 
-1. Are build, move, and attack **one each per turn**, refilled every turn? (The user will address this.)
+1. Are build, move, recruit, and attack **one each per turn**, refilled every turn? (The user will
+   address this.)
 2. Do Phase Two and Phase Three share pools, or does Phase Three add the attack pool on top?
 3. What exceptions exist to "a build spends resources"?
 4. Is this pool economy settled, or still tentative?
+5. **Movement:** what limits the railroad move (configurable)? Can a railroad move deposit anywhere
+   along the line? Does moving onto an occupied tile trigger anything, or is combat only resolved in
+   Phase Three?
+6. **Embassy model conflict:** resolved by D69 (entries start unplaced).
 
 ---
 
@@ -272,6 +305,29 @@ following is a *working assumption*, not a settled rule.
 
 ---
 
+## Supply lines (draft)
+
+- Supply lines are placed **on tiles**, **in the path of advancing armies**.
+- Moving army units from a controlled tile into uncontrolled territory is fine. But if the army pushes
+  deeper so its tiles are **not connected** to controlled territory, a **supply line must be placed in
+  the connecting tile**, paying its placement cost.
+- Supply lines also carry a **maintenance cost** each turn (D57/D65). If a player fails to maintain them
+  for a certain number of turns, the unsupplied **army must disband**. The number of turns is
+  **configurable** **[SETTLED]**.
+- **Railroads also supply [SETTLED direction]:** if an army is connected by **railroads**, they keep it
+  supplied, functioning like supply lines. Whether another player's railroads count, and how control/use
+  works, is **TBD** (deferred — the user raised it as a separate issue).
+- Engine: the encoded `maintenanceCost` exists on supply lines (D65); the concrete upkeep/disband rules
+  remain deferred (D57).
+
+### Open
+
+- Does one supply line cover one link in the path, or the whole path?
+- Is maintenance charged automatically at the start of a turn, and from which pool?
+- Railroad control/use: whose railroads can supply an army, and how?
+
+---
+
 ## Turn boundaries (cross-cutting)
 
 ### User-stated (draft)
@@ -312,10 +368,12 @@ endIf: () => undefined,                // seam only
 
 ---
 
-## Open questions
+## Open questions (rolling)
 
-1. Are the three phases per turn, per round, or whole-game?
-2. What are their names?
-3. What is mandatory in each?
-4. What ends a turn (as distinct from ending a phase)?
-5. What ends the game?
+1. Phase names for all three phases.
+2. What is mandatory in each phase?
+3. What does a Phase Two turn let you do in detail (the "for the most part" exceptions)?
+4. What ends Phase Three / the game? (PLAN.md open question 8.)
+5. Currency representation (deferred by the user).
+6. Starting draft hand size and the per-turn hand size (both configurable).
+7. Whether the pool economy is settled or still tentative.
