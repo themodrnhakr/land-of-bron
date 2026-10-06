@@ -1,0 +1,17 @@
+{
+  "worktree": {
+    "setup": "bun install"
+  },
+  "scripts": {
+    "web": {
+      "command": "bun run --filter @land-of-bron/web dev",
+      "type": "service",
+      "port": 5173
+    },
+    "server": {
+      "command": "bun run --filter @land-of-bron/server dev",
+      "type": "service",
+      "port": 3000
+    }
+  }
+}
