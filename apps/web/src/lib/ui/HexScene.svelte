@@ -23,9 +23,11 @@ import {
   createPhotoBundle,
   createProceduralBundle,
   createStylizedBundle,
+  createTableTextures,
   loadArtTextures,
   setLinenRepeat,
   setVignette,
+  type TableKind,
   type TextureBundle,
   type TextureMode,
 } from "./hexTextures";
@@ -39,6 +41,7 @@ let {
   linenScale,
   linenDepth,
   vignette,
+  table,
   onHover,
 }: {
   tiles: Tile3D[];
@@ -48,6 +51,7 @@ let {
   linenScale: number;
   linenDepth: number;
   vignette: number;
+  table: TableKind;
   onHover?: (tile: Tile3D | null) => void;
 } = $props();
 
@@ -127,6 +131,12 @@ const cardboardMaterial = new MeshPhysicalMaterial({
   roughness: 0.95,
   metalness: 0,
 });
+
+// Tabletop veneers; the active set is swapped by the table selector.
+const tableTextures = createTableTextures();
+const tableMaps = $derived(tableTextures[table]);
+const TABLE_SIZE = 34;
+const TABLE_THICKNESS = 1.4;
 
 // --- Interaction -----------------------------------------------------------
 
@@ -220,10 +230,23 @@ function registerMesh(ref: Mesh): () => void {
   }}
 />
 
-<!-- Ground disc so the board casts readable shadows. -->
-<T.Mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} receiveShadow>
-  <T.CircleGeometry args={[34, 64]} />
-  <T.MeshStandardMaterial color="#0a1120" roughness={1} metalness={0} />
+<!-- Wooden tabletop the board sits on. -->
+<T.Mesh
+  position={[0, -TABLE_THICKNESS / 2, 0]}
+  receiveShadow
+>
+  <T.BoxGeometry args={[TABLE_SIZE, TABLE_THICKNESS, TABLE_SIZE]} />
+  <T.MeshPhysicalMaterial
+    map={tableMaps.map}
+    normalMap={tableMaps.normalMap}
+    normalScale={1}
+    roughnessMap={tableMaps.roughnessMap}
+    roughness={1}
+    metalness={0}
+    clearcoat={0.3}
+    clearcoatRoughness={0.35}
+    envMapIntensity={0.4}
+  />
 </T.Mesh>
 
 {#each tiles as tile (tile.key)}

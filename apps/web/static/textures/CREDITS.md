@@ -12,9 +12,13 @@ Assets here exist only to power the experimental "Photo" surface style in the
 | `linen_diffuse.jpg` | [Poly Haven — Rough Linen](https://polyhaven.com/a/rough_linen) | CC0 |
 | `linen_normal.jpg` | [Poly Haven — Rough Linen](https://polyhaven.com/a/rough_linen) | CC0 |
 | `linen_roughness.jpg` | [Poly Haven — Rough Linen](https://polyhaven.com/a/rough_linen) | CC0 |
+| `maple_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — White Maple Veneer](https://polyhaven.com/a/white_maple_veneer) | CC0 |
+| `oak_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — Oak Veneer 02](https://polyhaven.com/a/oak_veneer_02) | CC0 |
+| `walnut_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — American Walnut Veneer](https://polyhaven.com/a/american_walnut_veneer) | CC0 |
 
 The `Linen print` surface style uses the Rough Linen normal/roughness/diffuse
-maps; the terrain ink drawings live in `static/art`.
+maps; the terrain ink drawings live in `static/art`. The tabletop options use
+the three veneer sets above.
 
 The other three surface styles (`Procedural`, `Stylized`, `Material`) generate
 everything at runtime and have no asset dependencies.

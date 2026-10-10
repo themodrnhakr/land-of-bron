@@ -10,7 +10,12 @@ import {
   type Tile3D,
 } from "./hex3d";
 import HexScene from "./HexScene.svelte";
-import { TEXTURE_MODES, type TextureMode } from "./hexTextures";
+import {
+  TABLE_KINDS,
+  type TableKind,
+  TEXTURE_MODES,
+  type TextureMode,
+} from "./hexTextures";
 
 // Fixed settings for this demo — ragged frontier, straight from the game
 // package, with neutral tiles always shown.
@@ -30,6 +35,7 @@ let animateSea = $state<boolean>(true);
 let linenScale = $state<number>(0.4);
 let linenDepth = $state<number>(3.5);
 let vignette = $state<number>(0.35);
+let table = $state<TableKind>("oak");
 let menuOpen = $state<boolean>(false);
 
 // Close the settings pop-over with Escape, or when clicking outside it.
@@ -127,6 +133,7 @@ const tiles = $derived(board.tiles);
         {linenScale}
         {linenDepth}
         {vignette}
+        {table}
         onHover={(tile) => (hovered = tile)}
       />
     </Canvas>
@@ -165,6 +172,23 @@ const tiles = $derived(board.tiles);
         <span class="hint">{
           TEXTURE_MODES.find((m) => m.id === mode)?.blurb
         }</span>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Table:</span>
+        <div class="segmented" role="group" aria-label="Tabletop wood">
+          {#each TABLE_KINDS as option (option.id)}
+            <button
+              type="button"
+              class="seg-btn"
+              class:active={table === option.id}
+              aria-pressed={table === option.id}
+              onclick={() => (table = option.id)}
+            >
+              {option.label}
+            </button>
+          {/each}
+        </div>
       </div>
 
       <div class="control-group">

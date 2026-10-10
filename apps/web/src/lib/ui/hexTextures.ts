@@ -590,3 +590,47 @@ export function attachTileVignette(material: MeshPhysicalMaterial): void {
   material.customProgramCacheKey = () => "hex-tile-vignette";
   material.needsUpdate = true;
 }
+
+// ---------------------------------------------------------------------------
+// Tabletop woods
+// ---------------------------------------------------------------------------
+
+export type TableKind = "maple" | "oak" | "walnut";
+
+export const TABLE_KINDS: { id: TableKind; label: string }[] = [
+  { id: "maple", label: "Maple" },
+  { id: "oak", label: "Oak" },
+  { id: "walnut", label: "Walnut" },
+];
+
+export interface TableTextures {
+  map: Texture;
+  normalMap: Texture;
+  roughnessMap: Texture;
+}
+
+/** How many times the veneer tiles across the tabletop. */
+const TABLE_REPEAT = 3;
+
+/** CC0 veneer sets (Poly Haven) for the three tabletop options. */
+export function createTableTextures(): Record<TableKind, TableTextures> {
+  const loader = new TextureLoader();
+  const load = (kind: TableKind, suffix: string, srgb: boolean): Texture => {
+    const tex = loader.load(`/textures/${kind}_${suffix}.jpg`);
+    tex.wrapS = tex.wrapT = RepeatWrapping;
+    tex.repeat.set(TABLE_REPEAT, TABLE_REPEAT);
+    tex.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
+    tex.anisotropy = 8;
+    return tex;
+  };
+  const make = (kind: TableKind): TableTextures => ({
+    map: load(kind, "diffuse", true),
+    normalMap: load(kind, "normal", false),
+    roughnessMap: load(kind, "roughness", false),
+  });
+  return {
+    maple: make("maple"),
+    oak: make("oak"),
+    walnut: make("walnut"),
+  };
+}
