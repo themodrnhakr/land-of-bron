@@ -1,6 +1,6 @@
 <script lang="ts">
 import { T } from "@threlte/core";
-import type { MeshPhysicalMaterial } from "three";
+import type { MeshPhysicalMaterial, Texture } from "three";
 import type { SurfaceRecipe } from "./hexTextures";
 
 let {
@@ -8,12 +8,15 @@ let {
   color,
   hovered,
   variant,
+  artMap = null,
 }: {
   recipe: SurfaceRecipe;
   color: string;
   hovered: boolean;
   /** Changes whenever the active texture bundle changes (mode / load state). */
   variant: string;
+  /** Per-tile printed art (linen mode); overrides the recipe's albedo. */
+  artMap?: Texture | null;
 } = $props();
 
 const emissive = $derived(hovered ? color : "#000000");
@@ -29,6 +32,7 @@ let mat = $state<MeshPhysicalMaterial>();
 $effect(() => {
   void variant;
   void recipe;
+  void artMap;
   if (mat) mat.needsUpdate = true;
 });
 </script>
@@ -36,7 +40,7 @@ $effect(() => {
 <T.MeshPhysicalMaterial
   bind:ref={mat}
   {color}
-  map={recipe.map}
+  map={artMap ?? recipe.map}
   normalMap={recipe.normalMap}
   bumpMap={recipe.bumpMap}
   bumpScale={recipe.bumpScale}

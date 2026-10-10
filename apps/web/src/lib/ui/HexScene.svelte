@@ -1,7 +1,7 @@
 <script lang="ts">
 import { T, useTask, useThrelte } from "@threlte/core";
 import { OrbitControls } from "@threlte/extras";
-import { type Mesh, Raycaster, Vector2 } from "three";
+import { type CanvasTexture, type Mesh, Raycaster, Vector2 } from "three";
 import {
   HEX_RADIUS,
   SEA_COLOR,
@@ -10,10 +10,13 @@ import {
   tintHex,
 } from "./hex3d";
 import {
+  artIndexFor,
+  createLinenBundle,
   createMaterialBundle,
   createPhotoBundle,
   createProceduralBundle,
   createStylizedBundle,
+  loadArtTextures,
   type TextureBundle,
   type TextureMode,
 } from "./hexTextures";
@@ -48,6 +51,7 @@ const { camera, dom, scene } = useThrelte();
 // The asset-free looks are cheap, so build them up front. The photo look pulls
 // ~3 MB of committed textures, so it is built lazily on first use.
 const staticBundles = {
+  linen: createLinenBundle(),
   procedural: createProceduralBundle(),
   stylized: createStylizedBundle(),
   material: createMaterialBundle(),
@@ -60,6 +64,15 @@ $effect(() => {
   }
 });
 
+// The linen look prints the terrain art, so those images are prepared lazily
+// (flattened onto white) the first time it is selected.
+let artTextures = $state<CanvasTexture[] | null>(null);
+$effect(() => {
+  if (mode === "linen" && artTextures === null) {
+    void loadArtTextures().then((textures) => (artTextures = textures));
+  }
+});
+
 const activeBundle = $derived(
   mode === "photo"
     ? (photoBundle ?? staticBundles.procedural)
@@ -69,7 +82,11 @@ const activeBundle = $derived(
 // Remount the material whenever the map set changes (mode switches, or the
 // photo textures finish being created) so three rebuilds the shader.
 const materialKey = $derived(
-  mode === "photo" && photoBundle === null ? "photo-loading" : mode,
+  mode === "photo" && photoBundle === null
+    ? "photo-loading"
+    : mode === "linen" && artTextures === null
+    ? "linen-loading"
+    : mode,
 );
 
 // Reflection environment is only used by the material-only look.
@@ -184,6 +201,9 @@ function registerMesh(ref: Mesh): () => void {
   ? (recipe.baseColor ?? SEA_COLOR)
   : (nationColors[tile.nationId! % nationColors.length] ?? SEA_COLOR)}
   {@const color = tintHex(baseColor, recipe.tint)}
+  {@const artMap = mode === "linen" && !isSea && artTextures
+  ? (artTextures[artIndexFor(tile.q, tile.r, artTextures.length)] ?? null)
+  : null}
   {@const lift = hovered ? (isSea ? 0.06 : 0.18) : 0}
   <T.Mesh
     position={[tile.x, height / 2 + lift, tile.z]}
@@ -193,6 +213,12 @@ function registerMesh(ref: Mesh): () => void {
     oncreate={(ref) => registerMesh(ref)}
   >
     <T.CylinderGeometry args={[HEX_RADIUS, HEX_RADIUS, height, 6]} />
-    <HexTileMaterial {recipe} {color} {hovered} variant={materialKey} />
+    <HexTileMaterial
+      {recipe}
+      {color}
+      {hovered}
+      variant={materialKey}
+      {artMap}
+    />
   </T.Mesh>
 {/each}

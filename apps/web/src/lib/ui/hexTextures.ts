@@ -10,6 +10,8 @@
  * - `stylized`   — crisp, graphic board-game pattern with a subtle relief.
  * - `material`   — no texture maps at all; a `MeshPhysicalMaterial` with
  *                  clearcoat plus a procedural gradient environment.
+ * - `linen`      — woven-linen relief tinted by color, with the hand-drawn
+ *                  terrain PNGs screen-printed on top (see `static/art`).
  *
  * Everything here touches the DOM/`Image`, so only call these factories on the
  * client (the Threlte canvas subtree never renders during SSR).
@@ -25,9 +27,10 @@ import {
   TextureLoader,
 } from "three";
 
-export type TextureMode = "procedural" | "photo" | "stylized" | "material";
+export type TextureMode = "procedural" | "photo" | "stylized" | "material" | "linen";
 
 export const TEXTURE_MODES: { id: TextureMode; label: string; blurb: string }[] = [
+  { id: "linen", label: "E · Linen print", blurb: "Woven linen + printed terrain art" },
   { id: "procedural", label: "A · Procedural", blurb: "Generated noise + bump, zero assets" },
   { id: "photo", label: "B · Photo", blurb: "Committed CC0 photo textures, tinted" },
   { id: "stylized", label: "C · Stylized", blurb: "Graphic board-game pattern" },
@@ -368,5 +371,117 @@ export function createMaterialBundle(): TextureBundle {
       envMapIntensity: 1.6,
     }),
     environment: createGradientEnvironment(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// E — linen + printed terrain art
+// ---------------------------------------------------------------------------
+
+/** Hand-drawn terrain illustrations, committed in `static/art`. */
+export const ART_URLS = Array.from({ length: 8 }, (_, i) => `/art/terrain-${i + 1}.png`);
+
+/**
+ * Load the terrain PNGs as white-backed "print" textures.
+ *
+ * The source art is black ink on a transparent background. A `map` ignores
+ * alpha (unless the material is transparent), so the transparent pixels would
+ * read as black and flood the tile. Flattening each image onto white first
+ * means the material `color` tints the fabric while the ink stays black — a
+ * screen-printed look.
+ */
+export async function loadArtTextures(): Promise<CanvasTexture[]> {
+  const size = 1024;
+  const images = await Promise.all(
+    ART_URLS.map(async (url) => {
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.src = url;
+      await image.decode();
+      return image;
+    }),
+  );
+  return images.map((image) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    // Woven-cloth background, then the ink printed on top.
+    ctx.drawImage(linenAlbedoCanvas(), 0, 0, size, size);
+    // Slightly translucent ink so it reads as dye printed into the cloth.
+    ctx.globalAlpha = 0.88;
+    ctx.drawImage(image, 0, 0, size, size);
+    ctx.globalAlpha = 1;
+    const tex = new CanvasTexture(canvas);
+    tex.colorSpace = SRGBColorSpace;
+    tex.anisotropy = 8;
+    tex.needsUpdate = true;
+    return tex;
+  });
+}
+
+/** Deterministically pick a terrain print for a tile. */
+export function artIndexFor(q: number, r: number, count: number): number {
+  const h = (Math.imul(q, 73856093) ^ Math.imul(r, 19349663)) >>> 0;
+  return count > 0 ? h % count : 0;
+}
+
+/** A plain weave. `albedo` gives near-white cloth, otherwise a bump map. */
+function linenWeaveCanvas(size: number, cells: number, albedo: boolean): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = albedo ? "#f3f2ef" : "#808080";
+  ctx.fillRect(0, 0, size, size);
+  const cell = size / cells;
+  for (let cy = 0; cy < cells; cy++) {
+    for (let cx = 0; cx < cells; cx++) {
+      const over = (cx + cy) % 2 === 0;
+      const x0 = cx * cell;
+      const y0 = cy * cell;
+      // Each thread is a ridge: the one "on top" shades across its width.
+      const g = over
+        ? ctx.createLinearGradient(x0, y0, x0, y0 + cell)
+        : ctx.createLinearGradient(x0, y0, x0 + cell, y0);
+      if (albedo) {
+        g.addColorStop(0, "rgba(0,0,0,0.10)");
+        g.addColorStop(0.5, "rgba(255,255,255,0.20)");
+        g.addColorStop(1, "rgba(0,0,0,0.10)");
+      } else {
+        g.addColorStop(0, "rgba(0,0,0,0.65)");
+        g.addColorStop(0.5, "rgba(255,255,255,0.65)");
+        g.addColorStop(1, "rgba(0,0,0,0.65)");
+      }
+      ctx.fillStyle = g;
+      ctx.fillRect(x0, y0, cell, cell);
+    }
+  }
+  return canvas;
+}
+
+let linenAlbedoCached: HTMLCanvasElement | null = null;
+function linenAlbedoCanvas(): HTMLCanvasElement {
+  return (linenAlbedoCached ??= linenWeaveCanvas(256, 32, true));
+}
+
+/**
+ * Linen recipe shared by land and sea. The land albedo is the per-tile terrain
+ * print supplied by the scene; the sea keeps the plain cloth.
+ */
+export function createLinenBundle(): TextureBundle {
+  const bump = toTexture(linenWeaveCanvas(256, 16, false), 2, false);
+  const rough = toTexture(linenWeaveCanvas(256, 16, false), 2, false);
+  const cloth = toTexture(linenAlbedoCanvas(), 1, true);
+  const linen: Partial<SurfaceRecipe> = {
+    bumpMap: bump,
+    bumpScale: 0.05,
+    roughnessMap: rough,
+    roughness: 0.98,
+    metalness: 0,
+    envMapIntensity: 0.35,
+  };
+  return {
+    land: recipe(linen),
+    sea: recipe({ ...linen, map: cloth }),
+    environment: null,
   };
 }

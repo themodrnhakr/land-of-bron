@@ -25,7 +25,7 @@ const DEFAULT_SEED = 6345;
 let nationCount = $state<number>(4);
 let seed = $state<number>(DEFAULT_SEED);
 let hovered = $state<Tile3D | null>(null);
-let mode = $state<TextureMode>("procedural");
+let mode = $state<TextureMode>("linen");
 let animateSea = $state<boolean>(true);
 
 const board = $derived.by(() => {
