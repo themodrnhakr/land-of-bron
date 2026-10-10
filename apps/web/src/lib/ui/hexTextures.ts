@@ -595,12 +595,17 @@ export function attachTileVignette(material: MeshPhysicalMaterial): void {
 // Tabletop woods
 // ---------------------------------------------------------------------------
 
-export type TableKind = "maple" | "oak" | "walnut";
+export type TableKind =
+  | "wood_table"
+  | "wood_table_large"
+  | "wood_table_001"
+  | "lacquered_cherry_wood";
 
 export const TABLE_KINDS: { id: TableKind; label: string }[] = [
-  { id: "maple", label: "Maple" },
-  { id: "oak", label: "Oak" },
-  { id: "walnut", label: "Walnut" },
+  { id: "wood_table", label: "Wood Table" },
+  { id: "wood_table_large", label: "Table Large" },
+  { id: "wood_table_001", label: "Table 001" },
+  { id: "lacquered_cherry_wood", label: "Cherry" },
 ];
 
 export interface TableTextures {
@@ -629,8 +634,9 @@ export function createTableTextures(): Record<TableKind, TableTextures> {
     roughnessMap: load(kind, "roughness", false),
   });
   return {
-    maple: make("maple"),
-    oak: make("oak"),
-    walnut: make("walnut"),
+    wood_table: make("wood_table"),
+    wood_table_large: make("wood_table_large"),
+    wood_table_001: make("wood_table_001"),
+    lacquered_cherry_wood: make("lacquered_cherry_wood"),
   };
 }

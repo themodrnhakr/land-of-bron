@@ -12,13 +12,14 @@ Assets here exist only to power the experimental "Photo" surface style in the
 | `linen_diffuse.jpg` | [Poly Haven — Rough Linen](https://polyhaven.com/a/rough_linen) | CC0 |
 | `linen_normal.jpg` | [Poly Haven — Rough Linen](https://polyhaven.com/a/rough_linen) | CC0 |
 | `linen_roughness.jpg` | [Poly Haven — Rough Linen](https://polyhaven.com/a/rough_linen) | CC0 |
-| `maple_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — White Maple Veneer](https://polyhaven.com/a/white_maple_veneer) | CC0 |
-| `oak_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — Oak Veneer 02](https://polyhaven.com/a/oak_veneer_02) | CC0 |
-| `walnut_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — American Walnut Veneer](https://polyhaven.com/a/american_walnut_veneer) | CC0 |
+| `wood_table_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — Wood Table](https://polyhaven.com/a/wood_table) | CC0 |
+| `wood_table_large_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — Wood Table Large](https://polyhaven.com/a/wood_table_large) | CC0 |
+| `wood_table_001_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — Wood Table 001](https://polyhaven.com/a/wood_table_001) | CC0 |
+| `lacquered_cherry_wood_diffuse.jpg` / `_normal` / `_roughness` | [Poly Haven — Lacquered Cherry Wood](https://polyhaven.com/a/lacquered_cherry_wood) | CC0 |
 
 The `Linen print` surface style uses the Rough Linen normal/roughness/diffuse
 maps; the terrain ink drawings live in `static/art`. The tabletop options use
-the three veneer sets above.
+the four wood sets above.
 
 The other three surface styles (`Procedural`, `Stylized`, `Material`) generate
 everything at runtime and have no asset dependencies.

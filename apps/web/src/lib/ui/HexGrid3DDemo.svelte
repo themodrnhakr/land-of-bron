@@ -35,7 +35,7 @@ let animateSea = $state<boolean>(true);
 let linenScale = $state<number>(0.4);
 let linenDepth = $state<number>(3.5);
 let vignette = $state<number>(0.35);
-let table = $state<TableKind>("oak");
+let table = $state<TableKind>("wood_table");
 let menuOpen = $state<boolean>(false);
 
 // Close the settings pop-over with Escape, or when clicking outside it.
