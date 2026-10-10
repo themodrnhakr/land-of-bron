@@ -81,3 +81,19 @@ export function axialToWorldXZ(q: number, r: number): { x: number; z: number } {
     z: r * (Math.sqrt(3) / 2) * HEX_SPACING,
   };
 }
+
+/**
+ * Lighten a `#rrggbb` color toward white by `amount` (0..1). Used to tint a
+ * shared grayscale/photo texture while keeping a hint of the nation color.
+ */
+export function tintHex(hex: string, amount: number): string {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!match) return hex;
+  const value = parseInt(match[1]!, 16);
+  const t = Math.max(0, Math.min(1, amount));
+  const mix = (channel: number) => Math.round(channel + (255 - channel) * t);
+  const r = mix((value >> 16) & 255);
+  const g = mix((value >> 8) & 255);
+  const b = mix(value & 255);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}

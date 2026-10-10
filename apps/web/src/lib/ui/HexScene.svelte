@@ -8,15 +8,29 @@ import {
   SEA_COLOR,
   SEA_HEIGHT,
   type Tile3D,
+  tintHex,
 } from "./hex3d";
+import {
+  createMaterialBundle,
+  createPhotoBundle,
+  createProceduralBundle,
+  createStylizedBundle,
+  type TextureBundle,
+  type TextureMode,
+} from "./hexTextures";
+import HexTileMaterial from "./HexTileMaterial.svelte";
 
 let {
   tiles,
   nationColors,
+  mode,
+  animateSea,
   onHover,
 }: {
   tiles: Tile3D[];
   nationColors: readonly string[];
+  mode: TextureMode;
+  animateSea: boolean;
   onHover?: (tile: Tile3D | null) => void;
 } = $props();
 
@@ -29,7 +43,42 @@ const raycaster = new Raycaster();
 const pointer = new Vector2();
 let pointerActive = false;
 
-const { camera, dom } = useThrelte();
+const { camera, dom, scene } = useThrelte();
+
+// --- Texture bundles -------------------------------------------------------
+// The asset-free looks are cheap, so build them up front. The photo look pulls
+// ~3 MB of committed textures, so it is built lazily on first use.
+const staticBundles = {
+  procedural: createProceduralBundle(),
+  stylized: createStylizedBundle(),
+  material: createMaterialBundle(),
+} satisfies Record<Exclude<TextureMode, "photo">, TextureBundle>;
+
+let photoBundle = $state<TextureBundle | null>(null);
+$effect(() => {
+  if (mode === "photo" && photoBundle === null) {
+    photoBundle = createPhotoBundle();
+  }
+});
+
+const activeBundle = $derived(
+  mode === "photo"
+    ? (photoBundle ?? staticBundles.procedural)
+    : staticBundles[mode],
+);
+
+// Remount the material whenever the map set changes (mode switches, or the
+// photo textures finish being created) so three rebuilds the shader.
+const materialKey = $derived(
+  mode === "photo" && photoBundle === null ? "photo-loading" : mode,
+);
+
+// Reflection environment is only used by the material-only look.
+$effect(() => {
+  scene.environment = activeBundle.environment;
+});
+
+// --- Interaction -----------------------------------------------------------
 
 // Track the pointer in normalized device coordinates.
 $effect(() => {
@@ -65,6 +114,15 @@ useTask(() => {
     hoveredKey = key;
     onHover?.(hit ? (hit.object.userData.tile as Tile3D) : null);
   }
+});
+
+// Scroll the sea's bump/normal texture for a moving-water effect.
+useTask((delta) => {
+  if (!animateSea) return;
+  const texture = activeBundle.sea.animated;
+  if (!texture) return;
+  texture.offset.x = (texture.offset.x + delta * 0.025) % 1;
+  texture.offset.y = (texture.offset.y + delta * 0.018) % 1;
 });
 
 function registerMesh(ref: Mesh): () => void {
@@ -122,9 +180,11 @@ function registerMesh(ref: Mesh): () => void {
   {@const isSea = tile.nationId === null}
   {@const hovered = hoveredKey === tile.key}
   {@const height = isSea ? SEA_HEIGHT : NATION_HEIGHT}
-  {@const color = isSea
-  ? SEA_COLOR
-  : nationColors[tile.nationId! % nationColors.length]}
+  {@const recipe = isSea ? activeBundle.sea : activeBundle.land}
+  {@const baseColor = isSea
+  ? (recipe.baseColor ?? SEA_COLOR)
+  : (nationColors[tile.nationId! % nationColors.length] ?? SEA_COLOR)}
+  {@const color = tintHex(baseColor, recipe.tint)}
   {@const lift = hovered ? (isSea ? 0.06 : 0.18) : 0}
   <T.Mesh
     position={[tile.x, height / 2 + lift, tile.z]}
@@ -134,12 +194,6 @@ function registerMesh(ref: Mesh): () => void {
     oncreate={(ref) => registerMesh(ref)}
   >
     <T.CylinderGeometry args={[HEX_RADIUS, HEX_RADIUS, height, 6]} />
-    <T.MeshStandardMaterial
-      color={color}
-      roughness={isSea ? 0.95 : 0.5}
-      metalness={isSea ? 0.05 : 0.18}
-      emissive={hovered ? color : "#000000"}
-      emissiveIntensity={hovered ? 0.5 : 0}
-    />
+    <HexTileMaterial {recipe} {color} {hovered} variant={materialKey} />
   </T.Mesh>
 {/each}

@@ -10,6 +10,7 @@ import {
   type Tile3D,
 } from "./hex3d";
 import HexScene from "./HexScene.svelte";
+import { TEXTURE_MODES, type TextureMode } from "./hexTextures";
 
 // Fixed settings for this demo — ragged frontier, straight from the game
 // package, with neutral tiles always shown.
@@ -24,6 +25,8 @@ const DEFAULT_SEED = 6345;
 let nationCount = $state<number>(4);
 let seed = $state<number>(DEFAULT_SEED);
 let hovered = $state<Tile3D | null>(null);
+let mode = $state<TextureMode>("procedural");
+let animateSea = $state<boolean>(true);
 
 const board = $derived.by(() => {
   const playerCount = Math.min(7, Math.max(3, Math.round(nationCount)));
@@ -95,12 +98,35 @@ const tiles = $derived(board.tiles);
       <HexScene
         {tiles}
         nationColors={NATION_COLORS}
+        {mode}
+        {animateSea}
         onHover={(tile) => (hovered = tile)}
       />
     </Canvas>
   </div>
 
   <header class="control-panel">
+    <div class="control-group full">
+      <span class="control-label">Surface:</span>
+      <div class="segmented" role="group" aria-label="Tile surface style">
+        {#each TEXTURE_MODES as option (option.id)}
+          <button
+            type="button"
+            class="seg-btn"
+            class:active={mode === option.id}
+            aria-pressed={mode === option.id}
+            onclick={() => (mode = option.id)}
+            title={option.blurb}
+          >
+            {option.label}
+          </button>
+        {/each}
+      </div>
+      <span class="hint">{
+        TEXTURE_MODES.find((m) => m.id === mode)?.blurb
+      }</span>
+    </div>
+
     <div class="control-group">
       <span class="control-label">Layout:</span>
       <div class="fixed-pill">4. Ragged Frontier</div>
@@ -153,6 +179,19 @@ const tiles = $derived(board.tiles);
         max="7"
         bind:value={nationCount}
       />
+    </div>
+
+    <div class="control-group">
+      <label class="switch-label" for="animateSea">
+        <input
+          id="animateSea"
+          type="checkbox"
+          class="switch-input"
+          bind:checked={animateSea}
+        />
+        <span class="switch-track"><span class="switch-thumb"></span></span>
+        <span>Animate sea</span>
+      </label>
     </div>
   </header>
 
@@ -222,8 +261,109 @@ const tiles = $derived(board.tiles);
   min-width: 260px;
 }
 
+.control-group.full {
+  flex: 1 1 100%;
+}
+
 .control-label {
   color: #94a3b8;
+}
+
+/* Segmented control for the experimental surface styles */
+.segmented {
+  display: inline-flex;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.seg-btn {
+  background: transparent;
+  color: #94a3b8;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.seg-btn:hover {
+  color: #f8fafc;
+}
+
+.seg-btn.active {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.seg-btn:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Toggle switch (sea animation) */
+.switch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  user-select: none;
+}
+
+.switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-track {
+  width: 34px;
+  height: 18px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  background: #94a3b8;
+  border-radius: 50%;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.switch-input:checked + .switch-track {
+  background: #10b981;
+  border-color: #059669;
+}
+
+.switch-input:checked + .switch-track .switch-thumb {
+  transform: translateX(16px);
+  background: #f8fafc;
+}
+
+.switch-input:focus-visible + .switch-track {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
 }
 
 .fixed-pill {
