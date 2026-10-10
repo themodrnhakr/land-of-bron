@@ -3,9 +3,12 @@ import { T, useTask, useThrelte } from "@threlte/core";
 import { OrbitControls } from "@threlte/extras";
 import {
   type CanvasTexture,
+  type DirectionalLight,
   type Mesh,
   MeshPhysicalMaterial,
+  type PointLight,
   Raycaster,
+  type SpotLight,
   Vector2,
 } from "three";
 import {
@@ -17,41 +20,55 @@ import {
 } from "./hex3d";
 import {
   artIndexFor,
+  cachedPrintArt,
   createCardboard,
-  createLinenBundle,
   createMaterialBundle,
   createPhotoBundle,
+  createPrintBundle,
   createProceduralBundle,
   createStylizedBundle,
   createTableTextures,
-  loadArtTextures,
-  setLinenRepeat,
+  isPrintMode,
+  type LabMode,
+  loadPrintArt,
+  type PrintMode,
+  setPrintRepeat,
   setVignette,
+  SUBSTRATES,
   type TableKind,
   type TextureBundle,
   type TextureMode,
 } from "./hexTextures";
 import HexTileMaterial from "./HexTileMaterial.svelte";
+import {
+  type EnvironmentConfig,
+  type LightConfig,
+  lightPosition,
+} from "./lighting";
 
 let {
   tiles,
   nationColors,
   mode,
   animateSea,
-  linenScale,
-  linenDepth,
+  printScale,
+  relief,
   vignette,
   table,
+  lights,
+  environment,
   onHover,
 }: {
   tiles: Tile3D[];
   nationColors: readonly string[];
   mode: TextureMode;
   animateSea: boolean;
-  linenScale: number;
-  linenDepth: number;
+  printScale: number;
+  relief: number;
   vignette: number;
   table: TableKind;
+  lights: LightConfig[];
+  environment: EnvironmentConfig;
   onHover?: (tile: Tile3D | null) => void;
 } = $props();
 
@@ -67,14 +84,14 @@ let pointerActive = false;
 const { camera, dom, scene } = useThrelte();
 
 // --- Texture bundles -------------------------------------------------------
-// The asset-free looks are cheap, so build them up front. The photo look pulls
-// ~3 MB of committed textures, so it is built lazily on first use.
-const staticBundles = {
-  linen: createLinenBundle(),
+// The asset-free looks are cheap, so build them up front. The photo look and
+// the printed substrates pull committed textures, so they are built lazily on
+// first use and then cached.
+const staticBundles: Record<Exclude<LabMode, "photo">, TextureBundle> = {
   procedural: createProceduralBundle(),
   stylized: createStylizedBundle(),
   material: createMaterialBundle(),
-} satisfies Record<Exclude<TextureMode, "photo">, TextureBundle>;
+};
 
 let photoBundle = $state<TextureBundle | null>(null);
 $effect(() => {
@@ -83,39 +100,62 @@ $effect(() => {
   }
 });
 
-// The linen look prints the terrain art, so those images are prepared lazily
-// (flattened onto white) the first time it is selected.
+const printBundles = new Map<PrintMode, TextureBundle>();
+function printBundleFor(id: PrintMode): TextureBundle {
+  let bundle = printBundles.get(id);
+  if (!bundle) {
+    bundle = createPrintBundle(id);
+    printBundles.set(id, bundle);
+  }
+  return bundle;
+}
+
+// The printed terrain art is baked per substrate and per zoom: the relief maps
+// retune immediately, then the printed face is rebaked once the slider settles.
 let artTextures = $state<CanvasTexture[] | null>(null);
 $effect(() => {
-  if (mode === "linen" && artTextures === null) {
-    void loadArtTextures().then((textures) => (artTextures = textures));
+  const active = mode;
+  const repeat = printScale;
+  if (!isPrintMode(active)) {
+    artTextures = null;
+    return;
   }
+  setPrintRepeat(active, repeat);
+  const cached = cachedPrintArt(active, repeat);
+  if (cached) {
+    artTextures = cached;
+    return;
+  }
+  artTextures = null;
+  const timer = setTimeout(() => {
+    void loadPrintArt(active, repeat).then((textures) => {
+      if (mode === active) artTextures = textures;
+    });
+  }, 140);
+  return () => clearTimeout(timer);
 });
 
 const activeBundle = $derived(
   mode === "photo"
     ? (photoBundle ?? staticBundles.procedural)
+    : isPrintMode(mode)
+    ? printBundleFor(mode)
     : staticBundles[mode],
 );
 
 // Remount the material whenever the map set changes (mode switches, or the
-// photo textures finish being created) so three rebuilds the shader.
+// textures finish being created) so three rebuilds the shader.
 const materialKey = $derived(
   mode === "photo" && photoBundle === null
     ? "photo-loading"
-    : mode === "linen" && artTextures === null
-    ? "linen-loading"
+    : isPrintMode(mode) && artTextures === null
+    ? `${mode}-loading`
     : mode,
 );
 
 // Reflection environment is only used by the material-only look.
 $effect(() => {
   scene.environment = activeBundle.environment;
-});
-
-// Live fabric tuning for the linen look.
-$effect(() => {
-  setLinenRepeat(linenScale);
 });
 
 $effect(() => {
@@ -185,6 +225,22 @@ useTask((delta) => {
   texture.offset.y = (texture.offset.y + delta * 0.018) % 1;
 });
 
+/** Give every shadow-casting light a tight, board-sized shadow frustum. */
+function setupShadow(light: DirectionalLight | PointLight | SpotLight): void {
+  light.shadow.mapSize.set(1024, 1024);
+  light.shadow.bias = -0.0006;
+  const cam = light.shadow.camera;
+  if ("left" in cam) {
+    cam.left = -22;
+    cam.right = 22;
+    cam.top = 22;
+    cam.bottom = -22;
+    cam.near = 1;
+    cam.far = 90;
+    cam.updateProjectionMatrix();
+  }
+}
+
 function registerMesh(ref: Mesh): () => void {
   meshes.push(ref);
   return () => {
@@ -211,24 +267,43 @@ function registerMesh(ref: Mesh): () => void {
   target={[0, 0, 0]}
 />
 
-<T.AmbientLight intensity={0.6} />
-<T.HemisphereLight args={["#bfdbfe", "#020617", 0.7]} />
-<T.DirectionalLight
-  castShadow
-  position={[13, 22, 11]}
-  intensity={2.2}
-  oncreate={(light) => {
-    light.shadow.mapSize.set(2048, 2048);
-    const shadowCam = light.shadow.camera;
-    shadowCam.left = -20;
-    shadowCam.right = 20;
-    shadowCam.top = 20;
-    shadowCam.bottom = -20;
-    shadowCam.near = 1;
-    shadowCam.far = 80;
-    shadowCam.updateProjectionMatrix();
-  }}
+<T.AmbientLight intensity={environment.ambient} />
+<T.HemisphereLight
+  args={[environment.skyColor, environment.groundColor, environment.hemisphere]}
 />
+
+{#each lights as light (light.id)}
+  {#if light.enabled}
+    {#if light.type === "directional"}
+      <T.DirectionalLight
+        position={lightPosition(light)}
+        color={light.color}
+        intensity={light.intensity}
+        castShadow={light.castShadow}
+        oncreate={setupShadow}
+      />
+    {:else if light.type === "point"}
+      <T.PointLight
+        position={lightPosition(light)}
+        color={light.color}
+        intensity={light.intensity}
+        decay={0}
+        oncreate={setupShadow}
+      />
+    {:else}
+      <T.SpotLight
+        position={lightPosition(light)}
+        color={light.color}
+        intensity={light.intensity}
+        decay={0}
+        angle={(light.angle * Math.PI) / 180}
+        penumbra={light.penumbra}
+        castShadow={light.castShadow}
+        oncreate={setupShadow}
+      />
+    {/if}
+  {/if}
+{/each}
 
 <!-- Wooden tabletop the board sits on. -->
 <T.Mesh
@@ -258,7 +333,7 @@ function registerMesh(ref: Mesh): () => void {
   ? (recipe.baseColor ?? SEA_COLOR)
   : (nationColors[tile.nationId! % nationColors.length] ?? SEA_COLOR)}
   {@const color = tintHex(baseColor, recipe.tint)}
-  {@const artMap = mode === "linen" && !isSea && artTextures
+  {@const artMap = isPrintMode(mode) && !isSea && artTextures
   ? (artTextures[artIndexFor(tile.q, tile.r, artTextures.length)] ?? null)
   : null}
   {@const lift = hovered ? (isSea ? 0.06 : 0.18) : 0}
@@ -285,7 +360,9 @@ function registerMesh(ref: Mesh): () => void {
         {hovered}
         variant={materialKey}
         {artMap}
-        normalScaleOverride={mode === "linen" ? linenDepth : null}
+        normalScaleOverride={isPrintMode(mode)
+        ? SUBSTRATES[mode].normalScale * relief
+        : null}
       />
     </T.Mesh>
   </T.Mesh>

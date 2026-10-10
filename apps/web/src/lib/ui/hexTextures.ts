@@ -1,17 +1,19 @@
 /**
- * Experimental tile-surface recipes for the 3D demo.
+ * Tile-surface recipes for the 3D demo.
  *
- * Several interchangeable "looks" are generated/loaded here so the demo can be a
- * playground for comparing texturing approaches:
+ * Two families live here:
  *
- * - `procedural` — runtime-generated noise albedo + bump, no asset files.
- * - `photo`      — committed CC0 photo textures (Poly Haven + three.js water
- *                  normal), tinted per nation.
- * - `stylized`   — crisp, graphic board-game pattern with a subtle relief.
- * - `material`   — no texture maps at all; a `MeshPhysicalMaterial` with
- *                  clearcoat plus a procedural gradient environment.
- * - `linen`      — woven-linen relief tinted by color, with the hand-drawn
- *                  terrain PNGs screen-printed on top (see `static/art`).
+ * **Printed** — a real CC0 paper / board / cloth relief with a hand-drawn
+ * terrain illustration screen-printed on top, chasing the look of a printed
+ * playing card or a printed cardboard game piece:
+ *   - `card`    — playing-card stock (smooth, satin coating)
+ *   - `board`   — chipboard game piece (smooth kraft, matte)
+ *   - `kraft`   — mottled brown board, matte
+ *   - `hessian` — fine air-cushion weave, the back of a playing card
+ *   - `linen`   — woven linen cloth
+ *
+ * **Lab** — the original experimental looks: `procedural`, `photo`,
+ * `stylized`, `material`.
  *
  * Everything here touches the DOM/`Image`, so only call these factories on the
  * client (the Threlte canvas subtree never renders during SSR).
@@ -28,15 +30,42 @@ import {
   TextureLoader,
 } from "three";
 
-export type TextureMode = "procedural" | "photo" | "stylized" | "material" | "linen";
+/** Printed substrates: a paper/board/cloth relief with art printed onto it. */
+export type PrintMode = "card" | "board" | "kraft" | "hessian" | "linen";
 
-export const TEXTURE_MODES: { id: TextureMode; label: string; blurb: string }[] = [
-  { id: "linen", label: "E · Linen print", blurb: "Woven linen + printed terrain art" },
-  { id: "procedural", label: "A · Procedural", blurb: "Generated noise + bump, zero assets" },
-  { id: "photo", label: "B · Photo", blurb: "Committed CC0 photo textures, tinted" },
-  { id: "stylized", label: "C · Stylized", blurb: "Graphic board-game pattern" },
-  { id: "material", label: "D · Material", blurb: "No maps — clearcoat + environment" },
+/** Lab looks: the original experimental surface styles. */
+export type LabMode = "procedural" | "photo" | "stylized" | "material";
+
+export type TextureMode = PrintMode | LabMode;
+
+export interface TextureModeInfo {
+  id: TextureMode;
+  label: string;
+  blurb: string;
+  group: "printed" | "lab";
+}
+
+export const TEXTURE_MODES: TextureModeInfo[] = [
+  { id: "card", label: "Card", blurb: "Playing-card stock — fine grain, satin coating", group: "printed" },
+  { id: "board", label: "Board", blurb: "Chipboard game piece — smooth kraft, matte", group: "printed" },
+  { id: "kraft", label: "Kraft", blurb: "Mottled brown board, fully matte", group: "printed" },
+  { id: "hessian", label: "Air-cushion", blurb: "Fine woven weave — the back of a playing card", group: "printed" },
+  { id: "linen", label: "Linen", blurb: "Woven linen cloth", group: "printed" },
+  { id: "procedural", label: "Procedural", blurb: "Generated noise + bump, zero assets", group: "lab" },
+  { id: "photo", label: "Photo", blurb: "Committed CC0 photo textures, tinted", group: "lab" },
+  { id: "stylized", label: "Stylized", blurb: "Graphic board-game pattern", group: "lab" },
+  { id: "material", label: "Material", blurb: "No maps — clearcoat + environment", group: "lab" },
 ];
+
+export const PRINT_MODES: PrintMode[] = ["card", "board", "kraft", "hessian", "linen"];
+
+export function isPrintMode(mode: TextureMode): mode is PrintMode {
+  return (PRINT_MODES as readonly string[]).includes(mode);
+}
+
+export function modeInfo(mode: TextureMode): TextureModeInfo | undefined {
+  return TEXTURE_MODES.find((m) => m.id === mode);
+}
 
 /** How one surface (land or sea) should be shaded. */
 export interface SurfaceRecipe {
@@ -378,7 +407,7 @@ export function createMaterialBundle(): TextureBundle {
 }
 
 // ---------------------------------------------------------------------------
-// E — linen + printed terrain art
+// Printed substrates — CC0 paper / board / cloth reliefs with art printed on top
 // ---------------------------------------------------------------------------
 
 /** Hand-drawn terrain illustrations, committed in `static/art`. */
@@ -390,33 +419,198 @@ export const ART_URLS = Array.from({ length: 8 }, (_, i) => `/art/terrain-${i + 
  */
 export const ART_ROTATIONS: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
 
-/** Real CC0 linen cloth (Poly Haven "rough_linen"). */
-export const LINEN_URLS = {
-  diffuse: "/textures/linen_diffuse.jpg",
-  normal: "/textures/linen_normal.jpg",
-  roughness: "/textures/linen_roughness.jpg",
-} as const;
+/** Where each substrate's three maps live. All CC0 (see `textures/CREDITS.md`). */
+export const SUBSTRATE_URLS: Record<
+  PrintMode,
+  { diffuse: string; normal: string; roughness: string }
+> = {
+  card: {
+    diffuse: "/textures/card_diffuse.jpg",
+    normal: "/textures/card_normal.jpg",
+    roughness: "/textures/card_roughness.jpg",
+  },
+  board: {
+    diffuse: "/textures/board_diffuse.jpg",
+    normal: "/textures/board_normal.jpg",
+    roughness: "/textures/board_roughness.jpg",
+  },
+  kraft: {
+    diffuse: "/textures/kraft_diffuse.jpg",
+    normal: "/textures/kraft_normal.jpg",
+    roughness: "/textures/kraft_roughness.jpg",
+  },
+  hessian: {
+    diffuse: "/textures/hessian_diffuse.jpg",
+    normal: "/textures/hessian_normal.jpg",
+    roughness: "/textures/hessian_roughness.jpg",
+  },
+  linen: {
+    diffuse: "/textures/linen_diffuse.jpg",
+    normal: "/textures/linen_normal.jpg",
+    roughness: "/textures/linen_roughness.jpg",
+  },
+};
 
-/** Default cloth zoom: how much of the linen image spans a tile. */
-const DEFAULT_LINEN_REPEAT = 0.4;
-
-let linenTextures: Texture[] = [];
-
-/** Live-adjust the fabric scale (how much of the linen image spans a tile). */
-export function setLinenRepeat(repeat: number): void {
-  for (const tex of linenTextures) tex.repeat.set(repeat, repeat);
+/**
+ * How one printed substrate is shaded. `repeat` is how much of the texture
+ * spans a single tile (smaller = more zoomed in); `toneStrength` is how
+ * strongly the substrate's own colour bleeds into the printed face — kept low
+ * so the nation colour stays vivid.
+ */
+export interface Substrate {
+  /** Default zoom: how much of the image spans one tile. */
+  repeat: number;
+  normalScale: number;
+  roughness: number;
+  clearcoat: number;
+  clearcoatRoughness: number;
+  envMapIntensity: number;
+  /** Opacity of the printed ink. */
+  inkAlpha: number;
+  /** How much of the substrate's own colour shows through the print. */
+  toneStrength: number;
 }
 
-let linenDiffuseImage: HTMLImageElement | null = null;
-async function getLinenDiffuseImage(): Promise<HTMLImageElement> {
-  if (!linenDiffuseImage) {
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.src = LINEN_URLS.diffuse;
-    await image.decode();
-    linenDiffuseImage = image;
+export const SUBSTRATES: Record<PrintMode, Substrate> = {
+  // Smooth, finely grained stock with a satin coating — a playing-card face.
+  card: {
+    repeat: 1.2,
+    normalScale: 0.3,
+    roughness: 0.42,
+    clearcoat: 0.6,
+    clearcoatRoughness: 0.22,
+    envMapIntensity: 0.6,
+    inkAlpha: 0.92,
+    toneStrength: 0.25,
+  },
+  // Smooth kraft chipboard — the top of a punched game piece.
+  board: {
+    repeat: 1,
+    normalScale: 0.45,
+    roughness: 0.68,
+    clearcoat: 0.15,
+    clearcoatRoughness: 0.45,
+    envMapIntensity: 0.45,
+    inkAlpha: 0.92,
+    toneStrength: 0.45,
+  },
+  // Mottled brown board, completely matte.
+  kraft: {
+    repeat: 0.9,
+    normalScale: 0.6,
+    roughness: 0.82,
+    clearcoat: 0,
+    clearcoatRoughness: 0.6,
+    envMapIntensity: 0.4,
+    inkAlpha: 0.92,
+    toneStrength: 0.3,
+  },
+  // Fine jute weave — the "air cushion" finish on a card back.
+  hessian: {
+    repeat: 0.45,
+    normalScale: 1,
+    roughness: 0.72,
+    clearcoat: 0.25,
+    clearcoatRoughness: 0.35,
+    envMapIntensity: 0.5,
+    inkAlpha: 0.9,
+    toneStrength: 0.5,
+  },
+  // Original woven linen.
+  linen: {
+    repeat: 0.4,
+    normalScale: 1.5,
+    roughness: 1,
+    clearcoat: 0,
+    clearcoatRoughness: 0,
+    envMapIntensity: 0.45,
+    inkAlpha: 0.9,
+    toneStrength: 1,
+  },
+};
+
+/** Cached per-substrate state: the bundle is built once, then reused. */
+interface SubstrateRuntime {
+  bundle: TextureBundle;
+  /** normal + roughness, so the substrate zoom can be retuned live. */
+  textures: Texture[];
+  art: CanvasTexture[] | null;
+  /** The zoom the cached `art` was baked at. */
+  artRepeat: number;
+}
+
+const substrateRuntimes = new Map<PrintMode, SubstrateRuntime>();
+
+/** Build (or reuse) the shading bundle for a printed substrate. */
+export function createPrintBundle(id: PrintMode): TextureBundle {
+  const cached = substrateRuntimes.get(id);
+  if (cached) return cached.bundle;
+
+  const sub = SUBSTRATES[id];
+  const urls = SUBSTRATE_URLS[id];
+  const loader = new TextureLoader();
+  const make = (url: string, srgb: boolean): Texture => {
+    const tex = loader.load(url);
+    tex.wrapS = tex.wrapT = RepeatWrapping;
+    tex.repeat.set(sub.repeat, sub.repeat);
+    tex.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
+    tex.anisotropy = 8;
+    return tex;
+  };
+  const normal = make(urls.normal, false);
+  const rough = make(urls.roughness, false);
+
+  // The land albedo is the per-tile print supplied by the scene. The sea keeps
+  // the flat paint colour plus the substrate relief, so a printed field reads
+  // the same on every stock instead of being multiplied by a tan board.
+  const shared: Partial<SurfaceRecipe> = {
+    normalMap: normal,
+    normalScale: sub.normalScale,
+    roughnessMap: rough,
+    roughness: sub.roughness,
+    metalness: 0,
+    clearcoat: sub.clearcoat,
+    clearcoatRoughness: sub.clearcoatRoughness,
+    envMapIntensity: sub.envMapIntensity,
+  };
+  const bundle: TextureBundle = {
+    land: recipe(shared),
+    sea: recipe(shared),
+    environment: null,
+  };
+  substrateRuntimes.set(id, { bundle, textures: [normal, rough], art: null, artRepeat: 0 });
+  return bundle;
+}
+
+/** Live-adjust the substrate zoom (how much of the image spans a tile). */
+export function setPrintRepeat(id: PrintMode, repeat: number): void {
+  const runtime = substrateRuntimes.get(id);
+  if (!runtime) return;
+  for (const tex of runtime.textures) tex.repeat.set(repeat, repeat);
+}
+
+/** The prints baked for this substrate at this zoom, if they are ready. */
+export function cachedPrintArt(id: PrintMode, repeat: number): CanvasTexture[] | null {
+  const runtime = substrateRuntimes.get(id);
+  if (!runtime) return null;
+  return runtime.art && runtime.artRepeat === repeat ? runtime.art : null;
+}
+
+const imageCache = new Map<string, Promise<HTMLImageElement>>();
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  let pending = imageCache.get(url);
+  if (!pending) {
+    pending = new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error(`Failed to load ${url}`));
+      image.src = url;
+    });
+    imageCache.set(url, pending);
   }
-  return linenDiffuseImage;
+  return pending;
 }
 
 /** Draw a terrain PNG centred, optionally rotated by `degrees`. */
@@ -441,35 +635,40 @@ function drawArt(
 }
 
 /**
- * Load the terrain PNGs as "print" textures.
+ * Bake the terrain prints for a substrate.
  *
  * The source art is black ink on a transparent background. A `map` ignores
- * alpha (unless the material is transparent), so the transparent pixels would
- * read as black and flood the tile. Flattening each image onto the linen cloth
- * instead means the material `color` tints the fabric while the ink stays
- * black — a screen-printed look.
+ * alpha (unless the material is transparent), so those pixels would read as
+ * black and flood the tile. Each drawing is therefore flattened onto the
+ * substrate — a bright base, a faint wash of the substrate's own colour, then
+ * the ink — which reads as print and still lets the material `color` tint it.
  */
-export async function loadArtTextures(): Promise<CanvasTexture[]> {
+export async function loadPrintArt(
+  id: PrintMode,
+  repeat: number = SUBSTRATES[id].repeat,
+): Promise<CanvasTexture[]> {
   const size = 1024;
-  const cloth = await getLinenDiffuseImage();
-  const images = await Promise.all(
-    ART_URLS.map(async (url) => {
-      const image = new Image();
-      image.crossOrigin = "anonymous";
-      image.src = url;
-      await image.decode();
-      return image;
-    }),
-  );
-  return images.map((image, i) => {
+  const sub = SUBSTRATES[id];
+  const [substrate, ...art] = await Promise.all([
+    loadImage(SUBSTRATE_URLS[id].diffuse),
+    ...ART_URLS.map((url) => loadImage(url)),
+  ]);
+
+  const textures = art.map((image, i) => {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext("2d")!;
-    // Cloth background, matched to the fabric scale of the material normal.
-    const src = Math.round(cloth.naturalWidth * DEFAULT_LINEN_REPEAT);
-    ctx.drawImage(cloth, 0, 0, src, src, 0, 0, size, size);
-    // Slightly translucent ink so it reads as dye printed into the cloth.
-    ctx.globalAlpha = 0.9;
+    // Keep the face bright so the nation colour stays vivid.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, size, size);
+    if (sub.toneStrength > 0) {
+      const src = Math.max(1, Math.round(substrate.naturalWidth * repeat));
+      ctx.globalAlpha = sub.toneStrength;
+      ctx.drawImage(substrate, 0, 0, src, src, 0, 0, size, size);
+      ctx.globalAlpha = 1;
+    }
+    // Slightly translucent ink so it reads as dye printed into the stock.
+    ctx.globalAlpha = sub.inkAlpha;
     drawArt(ctx, image, size, ART_ROTATIONS[i] ?? 0);
     ctx.globalAlpha = 1;
     const tex = new CanvasTexture(canvas);
@@ -478,52 +677,19 @@ export async function loadArtTextures(): Promise<CanvasTexture[]> {
     tex.needsUpdate = true;
     return tex;
   });
+
+  const runtime = substrateRuntimes.get(id);
+  if (runtime) {
+    runtime.art = textures;
+    runtime.artRepeat = repeat;
+  }
+  return textures;
 }
 
 /** Deterministically pick a terrain print for a tile. */
 export function artIndexFor(q: number, r: number, count: number): number {
   const h = (Math.imul(q, 73856093) ^ Math.imul(r, 19349663)) >>> 0;
   return count > 0 ? h % count : 0;
-}
-
-/** Configure a repeating cloth map. */
-function linenTexture(
-  loader: TextureLoader,
-  url: string,
-  srgb: boolean,
-  repeat: number,
-): Texture {
-  const tex = loader.load(url);
-  tex.wrapS = tex.wrapT = RepeatWrapping;
-  tex.repeat.set(repeat, repeat);
-  tex.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
-  tex.anisotropy = 8;
-  return tex;
-}
-
-/**
- * Linen recipe shared by land and sea. The land albedo is the per-tile terrain
- * print supplied by the scene; the sea keeps the plain cloth.
- */
-export function createLinenBundle(): TextureBundle {
-  const loader = new TextureLoader();
-  const normal = linenTexture(loader, LINEN_URLS.normal, false, DEFAULT_LINEN_REPEAT);
-  const rough = linenTexture(loader, LINEN_URLS.roughness, false, DEFAULT_LINEN_REPEAT);
-  const cloth = linenTexture(loader, LINEN_URLS.diffuse, true, DEFAULT_LINEN_REPEAT);
-  linenTextures = [normal, rough, cloth];
-  const linen: Partial<SurfaceRecipe> = {
-    normalMap: normal,
-    normalScale: 1.5,
-    roughnessMap: rough,
-    roughness: 1,
-    metalness: 0,
-    envMapIntensity: 0.45,
-  };
-  return {
-    land: recipe(linen),
-    sea: recipe({ ...linen, map: cloth }),
-    environment: null,
-  };
 }
 
 // ---------------------------------------------------------------------------
