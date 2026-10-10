@@ -16,10 +16,16 @@
     "@sveltejs/adapter-auto": "^7.0.1",
     "@sveltejs/kit": "^2.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@types/three": "^0.186.0",
+    "effect": "beta",
     "svelte": "^5.56.1",
     "svelte-check": "^4.6.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16",
-    "effect": "beta"
+    "vite": "^8.0.16"
+  },
+  "dependencies": {
+    "@threlte/core": "^8.6.1",
+    "@threlte/extras": "^9.22.0",
+    "three": "^0.186.1"
   }
 }

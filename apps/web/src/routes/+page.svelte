@@ -1,122 +1,107 @@
-<script>
-	import HexGridDemo from "$lib/ui/HexGridDemo.svelte";
+<script lang="ts">
+import { resolve } from "$app/paths";
 </script>
 
 <main class="page">
-	<header class="hero">
-		<h1 class="page-title">Hex Map Layouts</h1>
-		<p>
-			A visual explorer for different ways to arrange a set of hex-grid
-			nations. Every layout gives each nation exactly 7 tiles — a capital
-			plus six surrounding hexes — but the shape of the map, its borders,
-			and the neutral space between nations differ per strategy.
-		</p>
-	</header>
+  <header class="hero">
+    <h1 class="page-title">Hex Map Layouts</h1>
+    <p>Two renderings of the same board-generation ideas — pick a demo.</p>
+  </header>
 
-	<HexGridDemo />
+  <nav class="demo-links" aria-label="Demos">
+    <a class="demo-card" href={resolve("/tile-layout")}>
+      <h2>2D Tile Layout</h2>
+      <p>
+        The original flat, top-down explorer with the full set of controls and
+        layout strategies.
+      </p>
+      <span class="cta">Open 2D demo →</span>
+    </a>
 
-	<section class="strategies" aria-label="Layout strategies">
-		<article class="strategy-card">
-			<h2>1. Interlocking Lattice <span class="tag">zero gap</span></h2>
-			<p>
-				The classic map: each nation is an identical 7-tile hex cluster,
-				arranged on a zero-gap lattice so nations tile the board perfectly
-				with no neutral space between them. Fully deterministic — the same
-				nation count always produces the same map.
-			</p>
-		</article>
-
-		<article class="strategy-card">
-			<h2>4. Ragged Frontier <span class="tag">irregular + neutral seams</span></h2>
-			<p>
-				Nations still get exactly 7 tiles each, but borders grow irregularly:
-				no two nations share the same shape, and their coasts interlock with
-				ragged inlets and peninsulas. Neutral sea extends only one tile
-				beyond nation borders, filling the thin gaps where nations meet.
-				The layout is seeded — the seed field reproduces any exact map.
-			</p>
-		</article>
-	</section>
-
-	<p class="footnote">
-		Two additional layouts (Spaced Nations and Organic Voronoi expansion)
-		still exist in the codebase but are intentionally hidden from this demo.
-	</p>
+    <a class="demo-card" href={resolve("/tile-layout-3d")}>
+      <h2>3D Tile Layout</h2>
+      <p>
+        The same board rendered as extruded hex prisms with Threlte — ragged
+        frontier only, neutral tiles on.
+      </p>
+      <span class="cta">Open 3D demo →</span>
+    </a>
+  </nav>
 </main>
 
 <style>
-	.page {
-		min-height: 100vh;
-		background: #020617;
-		color: #f8fafc;
-		font-family: system-ui, -apple-system, sans-serif;
-		padding: 2.5rem 1.5rem 3rem;
-		max-width: 1100px;
-		margin: 0 auto;
-	}
+.page {
+  min-height: 100vh;
+  background: #020617;
+  color: #f8fafc;
+  font-family: system-ui, -apple-system, sans-serif;
+  padding: 3rem 1.5rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
 
-	.page-title {
-		font-size: 2rem;
-		margin: 0 0 0.5rem;
-		letter-spacing: -0.02em;
-	}
+.page-title {
+  font-size: 2rem;
+  margin: 0 0 0.5rem;
+  letter-spacing: -0.02em;
+}
 
-	.hero {
-		margin-bottom: 1.5rem;
-	}
+.hero {
+  margin-bottom: 2rem;
+}
 
-	.hero p {
-		color: #94a3b8;
-		max-width: 70ch;
-		line-height: 1.6;
-		margin: 0;
-	}
+.hero p {
+  color: #94a3b8;
+  max-width: 70ch;
+  line-height: 1.6;
+  margin: 0;
+}
 
-	.strategies {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-		gap: 1rem;
-		margin: 1.5rem 0;
-	}
+.demo-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
 
-	.strategy-card {
-		background: #0f172a;
-		border: 1px solid #1e293b;
-		border-radius: 12px;
-		padding: 1.25rem 1.5rem;
-	}
+.demo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease,
+    background 0.15s ease;
+}
 
-	.strategy-card h2 {
-		font-size: 1.05rem;
-		margin: 0 0 0.6rem;
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		flex-wrap: wrap;
-	}
+.demo-card:hover {
+  border-color: #10b981;
+  background: #131f36;
+  transform: translateY(-2px);
+}
 
-	.tag {
-		font-size: 0.7rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: #a7f3d0;
-		background: rgba(16, 185, 129, 0.15);
-		border: 1px solid rgba(16, 185, 129, 0.35);
-		border-radius: 999px;
-		padding: 0.15rem 0.6rem;
-	}
+.demo-card h2 {
+  font-size: 1.2rem;
+  margin: 0;
+}
 
-	.strategy-card p {
-		color: #cbd5e1;
-		font-size: 0.92rem;
-		line-height: 1.6;
-		margin: 0;
-	}
+.demo-card p {
+  color: #cbd5e1;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  margin: 0;
+}
 
-	.footnote {
-		color: #475569;
-		font-size: 0.8rem;
-		margin-top: 1.25rem;
-	}
+.cta {
+  margin-top: auto;
+  padding-top: 0.5rem;
+  color: #a7f3d0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
 </style>
