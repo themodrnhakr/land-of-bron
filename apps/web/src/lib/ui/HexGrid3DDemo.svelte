@@ -30,6 +30,27 @@ let animateSea = $state<boolean>(true);
 let linenScale = $state<number>(0.4);
 let linenDepth = $state<number>(3.5);
 let vignette = $state<number>(0.35);
+let menuOpen = $state<boolean>(false);
+
+// Close the settings pop-over with Escape, or when clicking outside it.
+$effect(() => {
+  if (!menuOpen) return;
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape") menuOpen = false;
+  };
+  const onPointerDown = (event: PointerEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (target && !target.closest(".settings-panel, .settings-toggle")) {
+      menuOpen = false;
+    }
+  };
+  window.addEventListener("keydown", onKey);
+  window.addEventListener("pointerdown", onPointerDown);
+  return () => {
+    window.removeEventListener("keydown", onKey);
+    window.removeEventListener("pointerdown", onPointerDown);
+  };
+});
 
 const board = $derived.by(() => {
   const playerCount = Math.min(7, Math.max(3, Math.round(nationCount)));
@@ -111,139 +132,153 @@ const tiles = $derived(board.tiles);
     </Canvas>
   </div>
 
-  <header class="control-panel">
-    <div class="control-group full">
-      <span class="control-label">Surface:</span>
-      <div class="segmented" role="group" aria-label="Tile surface style">
-        {#each TEXTURE_MODES as option (option.id)}
-          <button
-            type="button"
-            class="seg-btn"
-            class:active={mode === option.id}
-            aria-pressed={mode === option.id}
-            onclick={() => (mode = option.id)}
-            title={option.blurb}
-          >
-            {option.label}
-          </button>
-        {/each}
+  <button
+    type="button"
+    class="settings-toggle"
+    class:open={menuOpen}
+    aria-expanded={menuOpen}
+    aria-controls="settings-panel"
+    onclick={() => (menuOpen = !menuOpen)}
+  >
+    <span class="settings-icon" aria-hidden="true">⚙</span>
+    Settings
+  </button>
+
+  {#if menuOpen}
+    <section class="settings-panel" id="settings-panel" aria-label="Settings">
+      <div class="control-group full">
+        <span class="control-label">Surface:</span>
+        <div class="segmented" role="group" aria-label="Tile surface style">
+          {#each TEXTURE_MODES as option (option.id)}
+            <button
+              type="button"
+              class="seg-btn"
+              class:active={mode === option.id}
+              aria-pressed={mode === option.id}
+              onclick={() => (mode = option.id)}
+              title={option.blurb}
+            >
+              {option.label}
+            </button>
+          {/each}
+        </div>
+        <span class="hint">{
+          TEXTURE_MODES.find((m) => m.id === mode)?.blurb
+        }</span>
       </div>
-      <span class="hint">{
-        TEXTURE_MODES.find((m) => m.id === mode)?.blurb
-      }</span>
-    </div>
 
-    <div class="control-group">
-      <span class="control-label">Layout:</span>
-      <div class="fixed-pill">4. Ragged Frontier</div>
-    </div>
-
-    <div class="control-group">
-      <span class="control-label">Source:</span>
-      <div class="fixed-pill">Game pkg</div>
-    </div>
-
-    <div class="control-group">
-      <span class="control-label">Neutral tiles:</span>
-      <div class="fixed-pill on">On</div>
-    </div>
-
-    <div class="control-group grow">
-      <label for="seed">Seed:</label>
-      <input
-        id="seed"
-        class="seed-input"
-        type="number"
-        min="0"
-        step="1"
-        bind:value={seed}
-        title="Deterministic seed — the same seed with the same nation count always reproduces the same layout"
-      />
-      <button
-        type="button"
-        class="ghost-btn"
-        onclick={() => (seed = DEFAULT_SEED)}
-        title="Reset to the default seed ({DEFAULT_SEED})"
-      >
-        Default
-      </button>
-      <button
-        type="button"
-        class="ghost-btn"
-        onclick={() => (seed = Math.floor(Math.random() * 100000))}
-      >
-        Randomize
-      </button>
-    </div>
-
-    <div class="control-group">
-      <label for="nations">Nations: <strong>{nationCount}</strong></label>
-      <input
-        id="nations"
-        type="range"
-        min="3"
-        max="7"
-        bind:value={nationCount}
-      />
-    </div>
-
-    <div class="control-group">
-      <label class="switch-label" for="animateSea">
-        <input
-          id="animateSea"
-          type="checkbox"
-          class="switch-input"
-          bind:checked={animateSea}
-        />
-        <span class="switch-track"><span class="switch-thumb"></span></span>
-        <span>Animate sea</span>
-      </label>
-    </div>
-
-    {#if mode === "linen"}
       <div class="control-group">
-        <label for="linenScale">Linen scale: <strong>{
-            linenScale.toFixed(2)
-          }</strong></label>
+        <span class="control-label">Layout:</span>
+        <div class="fixed-pill">4. Ragged Frontier</div>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Source:</span>
+        <div class="fixed-pill">Game pkg</div>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Neutral tiles:</span>
+        <div class="fixed-pill on">On</div>
+      </div>
+
+      <div class="control-group grow">
+        <label for="seed">Seed:</label>
         <input
-          id="linenScale"
+          id="seed"
+          class="seed-input"
+          type="number"
+          min="0"
+          step="1"
+          bind:value={seed}
+          title="Deterministic seed — the same seed with the same nation count always reproduces the same layout"
+        />
+        <button
+          type="button"
+          class="ghost-btn"
+          onclick={() => (seed = DEFAULT_SEED)}
+          title="Reset to the default seed ({DEFAULT_SEED})"
+        >
+          Default
+        </button>
+        <button
+          type="button"
+          class="ghost-btn"
+          onclick={() => (seed = Math.floor(Math.random() * 100000))}
+        >
+          Randomize
+        </button>
+      </div>
+
+      <div class="control-group">
+        <label for="nations">Nations: <strong>{nationCount}</strong></label>
+        <input
+          id="nations"
           type="range"
-          min="0.1"
-          max="2"
-          step="0.05"
-          bind:value={linenScale}
+          min="3"
+          max="7"
+          bind:value={nationCount}
         />
       </div>
 
       <div class="control-group">
-        <label for="linenDepth">Linen depth: <strong>{
-            linenDepth.toFixed(1)
+        <label class="switch-label" for="animateSea">
+          <input
+            id="animateSea"
+            type="checkbox"
+            class="switch-input"
+            bind:checked={animateSea}
+          />
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span>Animate sea</span>
+        </label>
+      </div>
+
+      {#if mode === "linen"}
+        <div class="control-group">
+          <label for="linenScale">Linen scale: <strong>{
+              linenScale.toFixed(2)
+            }</strong></label>
+          <input
+            id="linenScale"
+            type="range"
+            min="0.1"
+            max="2"
+            step="0.05"
+            bind:value={linenScale}
+          />
+        </div>
+
+        <div class="control-group">
+          <label for="linenDepth">Linen depth: <strong>{
+              linenDepth.toFixed(1)
+            }</strong></label>
+          <input
+            id="linenDepth"
+            type="range"
+            min="0"
+            max="4"
+            step="0.1"
+            bind:value={linenDepth}
+          />
+        </div>
+      {/if}
+
+      <div class="control-group">
+        <label for="vignette">Vignette: <strong>{
+            vignette.toFixed(2)
           }</strong></label>
         <input
-          id="linenDepth"
+          id="vignette"
           type="range"
           min="0"
-          max="4"
-          step="0.1"
-          bind:value={linenDepth}
+          max="0.8"
+          step="0.05"
+          bind:value={vignette}
         />
       </div>
-    {/if}
-
-    <div class="control-group">
-      <label for="vignette">Vignette: <strong>{
-          vignette.toFixed(2)
-        }</strong></label>
-      <input
-        id="vignette"
-        type="range"
-        min="0"
-        max="0.8"
-        step="0.05"
-        bind:value={vignette}
-      />
-    </div>
-  </header>
+    </section>
+  {/if}
 
   <footer class="status-bar">
     {#if board.error}
@@ -273,46 +308,92 @@ const tiles = $derived(board.tiles);
 
 <style>
 .demo {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   width: 100%;
   height: 100vh;
+  overflow: hidden;
   background: #020617;
   color: #f8fafc;
   font-family: system-ui, -apple-system, sans-serif;
 }
 
 .viewport {
-  position: relative;
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   background: radial-gradient(circle at 50% 25%, #12203a 0%, #020617 70%);
 }
 
-.control-panel {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.25rem 1.75rem;
-  padding: 0.85rem 1.5rem;
-  background: #0f172a;
-  border-top: 1px solid #1e293b;
+/* Floating settings button */
+.settings-toggle {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 20;
+  display: inline-flex;
   align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-toggle:hover {
+  background: #1e293b;
+}
+
+.settings-toggle.open {
+  background: #334155;
+  border-color: #10b981;
+}
+
+.settings-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* Pop-over panel */
+.settings-panel {
+  position: absolute;
+  top: 3.75rem;
+  right: 1rem;
+  z-index: 20;
+  width: min(92vw, 420px);
+  max-height: calc(100vh - 5rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
 }
 
 .control-group {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.6rem;
   font-size: 0.9rem;
 }
 
 .control-group.grow {
-  flex: 1;
-  min-width: 260px;
+  flex: 1 1 100%;
 }
 
 .control-group.full {
-  flex: 1 1 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
 }
 
 .control-label {
@@ -321,7 +402,8 @@ const tiles = $derived(board.tiles);
 
 /* Segmented control for the experimental surface styles */
 .segmented {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   background: #1e293b;
   border: 1px solid #334155;
   border-radius: 8px;
@@ -330,6 +412,8 @@ const tiles = $derived(board.tiles);
 }
 
 .seg-btn {
+  flex: 1 1 auto;
+  text-align: center;
   background: transparent;
   color: #94a3b8;
   border: none;
@@ -434,6 +518,8 @@ const tiles = $derived(board.tiles);
 }
 
 input[type="range"] {
+  flex: 1 1 8rem;
+  min-width: 5rem;
   background: #1e293b;
   border: 1px solid #334155;
   border-radius: 6px;
@@ -467,14 +553,21 @@ input[type="range"] {
 }
 
 .status-bar {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 20;
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.7rem 1.5rem;
-  background: #0f172a;
-  border-top: 1px solid #1e293b;
-  font-size: 0.85rem;
+  gap: 1.25rem;
+  max-width: calc(100% - 2rem);
+  padding: 0.5rem 0.85rem;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  font-size: 0.82rem;
   font-family: monospace;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
 }
 
 .placeholder {
