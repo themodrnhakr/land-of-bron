@@ -17,6 +17,7 @@ import {
   createProceduralBundle,
   createStylizedBundle,
   loadArtTextures,
+  setLinenRepeat,
   type TextureBundle,
   type TextureMode,
 } from "./hexTextures";
@@ -27,12 +28,16 @@ let {
   nationColors,
   mode,
   animateSea,
+  linenScale,
+  linenDepth,
   onHover,
 }: {
   tiles: Tile3D[];
   nationColors: readonly string[];
   mode: TextureMode;
   animateSea: boolean;
+  linenScale: number;
+  linenDepth: number;
   onHover?: (tile: Tile3D | null) => void;
 } = $props();
 
@@ -92,6 +97,11 @@ const materialKey = $derived(
 // Reflection environment is only used by the material-only look.
 $effect(() => {
   scene.environment = activeBundle.environment;
+});
+
+// Live fabric tuning for the linen look.
+$effect(() => {
+  setLinenRepeat(linenScale);
 });
 
 // --- Interaction -----------------------------------------------------------
@@ -219,6 +229,7 @@ function registerMesh(ref: Mesh): () => void {
       {hovered}
       variant={materialKey}
       {artMap}
+      normalScaleOverride={mode === "linen" ? linenDepth : null}
     />
   </T.Mesh>
 {/each}

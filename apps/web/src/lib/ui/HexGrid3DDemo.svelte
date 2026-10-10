@@ -27,6 +27,8 @@ let seed = $state<number>(DEFAULT_SEED);
 let hovered = $state<Tile3D | null>(null);
 let mode = $state<TextureMode>("linen");
 let animateSea = $state<boolean>(true);
+let linenScale = $state<number>(0.3);
+let linenDepth = $state<number>(2.5);
 
 const board = $derived.by(() => {
   const playerCount = Math.min(7, Math.max(3, Math.round(nationCount)));
@@ -100,6 +102,8 @@ const tiles = $derived(board.tiles);
         nationColors={NATION_COLORS}
         {mode}
         {animateSea}
+        {linenScale}
+        {linenDepth}
         onHover={(tile) => (hovered = tile)}
       />
     </Canvas>
@@ -193,6 +197,36 @@ const tiles = $derived(board.tiles);
         <span>Animate sea</span>
       </label>
     </div>
+
+    {#if mode === "linen"}
+      <div class="control-group">
+        <label for="linenScale">Linen scale: <strong>{
+            linenScale.toFixed(2)
+          }</strong></label>
+        <input
+          id="linenScale"
+          type="range"
+          min="0.1"
+          max="2"
+          step="0.05"
+          bind:value={linenScale}
+        />
+      </div>
+
+      <div class="control-group">
+        <label for="linenDepth">Linen depth: <strong>{
+            linenDepth.toFixed(1)
+          }</strong></label>
+        <input
+          id="linenDepth"
+          type="range"
+          min="0"
+          max="4"
+          step="0.1"
+          bind:value={linenDepth}
+        />
+      </div>
+    {/if}
   </header>
 
   <footer class="status-bar">

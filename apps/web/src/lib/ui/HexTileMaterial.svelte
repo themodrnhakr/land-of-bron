@@ -9,6 +9,7 @@ let {
   hovered,
   variant,
   artMap = null,
+  normalScaleOverride = null,
 }: {
   recipe: SurfaceRecipe;
   color: string;
@@ -17,6 +18,8 @@ let {
   variant: string;
   /** Per-tile printed art (linen mode); overrides the recipe's albedo. */
   artMap?: Texture | null;
+  /** Live normal-strength override (linen depth slider). */
+  normalScaleOverride?: number | null;
 } = $props();
 
 const emissive = $derived(hovered ? color : "#000000");
@@ -42,6 +45,7 @@ $effect(() => {
   {color}
   map={artMap ?? recipe.map}
   normalMap={recipe.normalMap}
+  normalScale={normalScaleOverride ?? recipe.normalScale}
   bumpMap={recipe.bumpMap}
   bumpScale={recipe.bumpScale}
   roughnessMap={recipe.roughnessMap}

@@ -1,7 +1,7 @@
 /**
  * Experimental tile-surface recipes for the 3D demo.
  *
- * Four interchangeable "looks" are generated/loaded here so the demo can be a
+ * Several interchangeable "looks" are generated/loaded here so the demo can be a
  * playground for comparing texturing approaches:
  *
  * - `procedural` — runtime-generated noise albedo + bump, no asset files.
@@ -46,6 +46,7 @@ export interface SurfaceRecipe {
   roughness: number;
   metalness: number;
   bumpScale: number;
+  normalScale: number;
   clearcoat: number;
   clearcoatRoughness: number;
   envMapIntensity: number;
@@ -72,6 +73,7 @@ const recipe = (partial: Partial<SurfaceRecipe>): SurfaceRecipe => ({
   roughness: 0.7,
   metalness: 0.05,
   bumpScale: 0.05,
+  normalScale: 1,
   clearcoat: 0,
   clearcoatRoughness: 0,
   envMapIntensity: 0.6,
@@ -382,16 +384,73 @@ export function createMaterialBundle(): TextureBundle {
 export const ART_URLS = Array.from({ length: 8 }, (_, i) => `/art/terrain-${i + 1}.png`);
 
 /**
- * Load the terrain PNGs as white-backed "print" textures.
+ * Per-image orientation correction (degrees, clockwise). A few of the supplied
+ * drawings are off-axis; nudge them here without touching the source files.
+ */
+export const ART_ROTATIONS: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
+
+/** Real CC0 linen cloth (Poly Haven "rough_linen"). */
+export const LINEN_URLS = {
+  diffuse: "/textures/linen_diffuse.jpg",
+  normal: "/textures/linen_normal.jpg",
+  roughness: "/textures/linen_roughness.jpg",
+} as const;
+
+/** Default cloth zoom: how much of the linen image spans a tile. */
+const DEFAULT_LINEN_REPEAT = 0.4;
+
+let linenTextures: Texture[] = [];
+
+/** Live-adjust the fabric scale (how much of the linen image spans a tile). */
+export function setLinenRepeat(repeat: number): void {
+  for (const tex of linenTextures) tex.repeat.set(repeat, repeat);
+}
+
+let linenDiffuseImage: HTMLImageElement | null = null;
+async function getLinenDiffuseImage(): Promise<HTMLImageElement> {
+  if (!linenDiffuseImage) {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.src = LINEN_URLS.diffuse;
+    await image.decode();
+    linenDiffuseImage = image;
+  }
+  return linenDiffuseImage;
+}
+
+/** Draw a terrain PNG centred, optionally rotated by `degrees`. */
+function drawArt(
+  ctx: CanvasRenderingContext2D,
+  image: CanvasImageSource,
+  size: number,
+  degrees: number,
+): void {
+  if (!degrees) {
+    ctx.drawImage(image, 0, 0, size, size);
+    return;
+  }
+  const rad = (degrees * Math.PI) / 180;
+  const cover = Math.abs(Math.cos(rad)) + Math.abs(Math.sin(rad));
+  const drawn = size * cover;
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+  ctx.rotate(rad);
+  ctx.drawImage(image, -drawn / 2, -drawn / 2, drawn, drawn);
+  ctx.restore();
+}
+
+/**
+ * Load the terrain PNGs as "print" textures.
  *
  * The source art is black ink on a transparent background. A `map` ignores
  * alpha (unless the material is transparent), so the transparent pixels would
- * read as black and flood the tile. Flattening each image onto white first
- * means the material `color` tints the fabric while the ink stays black — a
- * screen-printed look.
+ * read as black and flood the tile. Flattening each image onto the linen cloth
+ * instead means the material `color` tints the fabric while the ink stays
+ * black — a screen-printed look.
  */
 export async function loadArtTextures(): Promise<CanvasTexture[]> {
   const size = 1024;
+  const cloth = await getLinenDiffuseImage();
   const images = await Promise.all(
     ART_URLS.map(async (url) => {
       const image = new Image();
@@ -401,15 +460,16 @@ export async function loadArtTextures(): Promise<CanvasTexture[]> {
       return image;
     }),
   );
-  return images.map((image) => {
+  return images.map((image, i) => {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext("2d")!;
-    // Woven-cloth background, then the ink printed on top.
-    ctx.drawImage(linenAlbedoCanvas(), 0, 0, size, size);
+    // Cloth background, matched to the fabric scale of the material normal.
+    const src = Math.round(cloth.naturalWidth * DEFAULT_LINEN_REPEAT);
+    ctx.drawImage(cloth, 0, 0, src, src, 0, 0, size, size);
     // Slightly translucent ink so it reads as dye printed into the cloth.
-    ctx.globalAlpha = 0.88;
-    ctx.drawImage(image, 0, 0, size, size);
+    ctx.globalAlpha = 0.9;
+    drawArt(ctx, image, size, ART_ROTATIONS[i] ?? 0);
     ctx.globalAlpha = 1;
     const tex = new CanvasTexture(canvas);
     tex.colorSpace = SRGBColorSpace;
@@ -425,42 +485,19 @@ export function artIndexFor(q: number, r: number, count: number): number {
   return count > 0 ? h % count : 0;
 }
 
-/** A plain weave. `albedo` gives near-white cloth, otherwise a bump map. */
-function linenWeaveCanvas(size: number, cells: number, albedo: boolean): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = albedo ? "#f3f2ef" : "#808080";
-  ctx.fillRect(0, 0, size, size);
-  const cell = size / cells;
-  for (let cy = 0; cy < cells; cy++) {
-    for (let cx = 0; cx < cells; cx++) {
-      const over = (cx + cy) % 2 === 0;
-      const x0 = cx * cell;
-      const y0 = cy * cell;
-      // Each thread is a ridge: the one "on top" shades across its width.
-      const g = over
-        ? ctx.createLinearGradient(x0, y0, x0, y0 + cell)
-        : ctx.createLinearGradient(x0, y0, x0 + cell, y0);
-      if (albedo) {
-        g.addColorStop(0, "rgba(0,0,0,0.10)");
-        g.addColorStop(0.5, "rgba(255,255,255,0.20)");
-        g.addColorStop(1, "rgba(0,0,0,0.10)");
-      } else {
-        g.addColorStop(0, "rgba(0,0,0,0.65)");
-        g.addColorStop(0.5, "rgba(255,255,255,0.65)");
-        g.addColorStop(1, "rgba(0,0,0,0.65)");
-      }
-      ctx.fillStyle = g;
-      ctx.fillRect(x0, y0, cell, cell);
-    }
-  }
-  return canvas;
-}
-
-let linenAlbedoCached: HTMLCanvasElement | null = null;
-function linenAlbedoCanvas(): HTMLCanvasElement {
-  return (linenAlbedoCached ??= linenWeaveCanvas(256, 32, true));
+/** Configure a repeating cloth map. */
+function linenTexture(
+  loader: TextureLoader,
+  url: string,
+  srgb: boolean,
+  repeat: number,
+): Texture {
+  const tex = loader.load(url);
+  tex.wrapS = tex.wrapT = RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
+  tex.anisotropy = 8;
+  return tex;
 }
 
 /**
@@ -468,16 +505,18 @@ function linenAlbedoCanvas(): HTMLCanvasElement {
  * print supplied by the scene; the sea keeps the plain cloth.
  */
 export function createLinenBundle(): TextureBundle {
-  const bump = toTexture(linenWeaveCanvas(256, 16, false), 2, false);
-  const rough = toTexture(linenWeaveCanvas(256, 16, false), 2, false);
-  const cloth = toTexture(linenAlbedoCanvas(), 1, true);
+  const loader = new TextureLoader();
+  const normal = linenTexture(loader, LINEN_URLS.normal, false, DEFAULT_LINEN_REPEAT);
+  const rough = linenTexture(loader, LINEN_URLS.roughness, false, DEFAULT_LINEN_REPEAT);
+  const cloth = linenTexture(loader, LINEN_URLS.diffuse, true, DEFAULT_LINEN_REPEAT);
+  linenTextures = [normal, rough, cloth];
   const linen: Partial<SurfaceRecipe> = {
-    bumpMap: bump,
-    bumpScale: 0.05,
+    normalMap: normal,
+    normalScale: 1.5,
     roughnessMap: rough,
-    roughness: 0.98,
+    roughness: 1,
     metalness: 0,
-    envMapIntensity: 0.35,
+    envMapIntensity: 0.45,
   };
   return {
     land: recipe(linen),
