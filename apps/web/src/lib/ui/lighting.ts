@@ -51,13 +51,13 @@ export interface EnvironmentConfig {
 }
 
 export const DEFAULT_ENVIRONMENT: EnvironmentConfig = {
-  ambient: 0.6,
-  hemisphere: 0.7,
+  ambient: 0.15,
+  hemisphere: 0.2,
   skyColor: "#bfdbfe",
   groundColor: "#020617",
 };
 
-/** A neutral sun that reproduces the original demo look. */
+/** A neutral sun, used as the starting point for a freshly added light. */
 export function makeLight(index: number, partial: Partial<LightConfig> = {}): LightConfig {
   return {
     id: `light-${index}-${Math.random().toString(36).slice(2, 7)}`,
@@ -76,15 +76,45 @@ export function makeLight(index: number, partial: Partial<LightConfig> = {}): Li
   };
 }
 
+/**
+ * The shipped rig: three soft spots — a warm near-overhead key, a cool fill
+ * and a warm rim — over a very dim ambient/sky, so the board is lit almost
+ * entirely by the placed lights.
+ */
 export function createDefaultLights(): LightConfig[] {
   return [
     makeLight(0, {
-      color: "#fff5e6",
-      intensity: 2.2,
-      azimuth: 50,
-      elevation: 52,
-      distance: 28,
+      type: "spot",
+      color: "#fbe7c6",
+      intensity: 3.2,
+      azimuth: 0,
+      elevation: 89,
+      distance: 24,
       castShadow: true,
+      angle: 36,
+      penumbra: 1,
+    }),
+    makeLight(1, {
+      type: "spot",
+      color: "#80aaff",
+      intensity: 3,
+      azimuth: -64,
+      elevation: 25,
+      distance: 32,
+      castShadow: true,
+      angle: 15,
+      penumbra: 0.75,
+    }),
+    makeLight(2, {
+      type: "spot",
+      color: "#ff9f75",
+      intensity: 3,
+      azimuth: 48,
+      elevation: 25,
+      distance: 32,
+      castShadow: false,
+      angle: 15,
+      penumbra: 0.75,
     }),
   ];
 }

@@ -44,7 +44,7 @@ const GROWTH_CAP = 4;
 const DEFAULTS = {
   nationCount: 4,
   seed: 6345,
-  mode: "card" as TextureMode,
+  mode: "hessian" as TextureMode,
   animateSea: true,
   relief: 1,
   vignette: 0.35,
@@ -62,7 +62,9 @@ let seed = $state<number>(DEFAULTS.seed);
 
 // --- Surface -------------------------------------------------------------
 let mode = $state<TextureMode>(DEFAULTS.mode);
-let printScale = $state<number>(SUBSTRATES.card.repeat);
+let printScale = $state<number>(
+  isPrintMode(DEFAULTS.mode) ? SUBSTRATES[DEFAULTS.mode].repeat : 0.4,
+);
 let relief = $state<number>(DEFAULTS.relief);
 let vignette = $state<number>(DEFAULTS.vignette);
 let animateSea = $state<boolean>(DEFAULTS.animateSea);
