@@ -4,10 +4,9 @@ import { OrbitControls } from "@threlte/extras";
 import { type Mesh, Raycaster, Vector2 } from "three";
 import {
   HEX_RADIUS,
-  NATION_HEIGHT,
   SEA_COLOR,
-  SEA_HEIGHT,
   type Tile3D,
+  TILE_HEIGHT,
   tintHex,
 } from "./hex3d";
 import {
@@ -179,7 +178,7 @@ function registerMesh(ref: Mesh): () => void {
 {#each tiles as tile (tile.key)}
   {@const isSea = tile.nationId === null}
   {@const hovered = hoveredKey === tile.key}
-  {@const height = isSea ? SEA_HEIGHT : NATION_HEIGHT}
+  {@const height = TILE_HEIGHT}
   {@const recipe = isSea ? activeBundle.sea : activeBundle.land}
   {@const baseColor = isSea
   ? (recipe.baseColor ?? SEA_COLOR)

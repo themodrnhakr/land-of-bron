@@ -18,11 +18,8 @@ export const HEX_GAP = 0.06;
 /** Center-to-center distance between neighbouring hexes. */
 export const HEX_SPACING = Math.sqrt(3) * HEX_RADIUS + HEX_GAP;
 
-/** Extrusion height of a nation tile. */
-export const NATION_HEIGHT = 0.56;
-
-/** Extrusion height of a neutral sea tile. */
-export const SEA_HEIGHT = 0.12;
+/** Extrusion height shared by every tile — nations and neutral sea alike. */
+export const TILE_HEIGHT = 0.12;
 
 /** Nation fill colors, indexed by `nationId`. */
 export const NATION_COLORS = [
