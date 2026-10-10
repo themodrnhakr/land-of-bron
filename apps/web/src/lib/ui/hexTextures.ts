@@ -20,6 +20,7 @@
 import {
   CanvasTexture,
   EquirectangularReflectionMapping,
+  type MeshPhysicalMaterial,
   NoColorSpace,
   RepeatWrapping,
   SRGBColorSpace,
@@ -523,4 +524,69 @@ export function createLinenBundle(): TextureBundle {
     sea: recipe({ ...linen, map: cloth }),
     environment: null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Shared tile chrome: cardboard sides + top vignette
+// ---------------------------------------------------------------------------
+
+/** Kraft-cardboard albedo + bump for the cut sides of the tiles. */
+export interface CardboardMaps {
+  map: CanvasTexture;
+  bumpMap: CanvasTexture;
+}
+
+export function createCardboard(): CardboardMaps {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const img = ctx.createImageData(size, size);
+  const base = { r: 196, g: 164, b: 122 };
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const fibre = hash2(x, y, 31);
+      const grain = hash2(x, y, 77);
+      // Faint fluting, as if the corrugation is showing on the cut edge.
+      const flute = 0.5 + 0.5 * Math.sin((x / size) * Math.PI * 2 * 16);
+      const v = 1 + (fibre - 0.5) * 0.16 + (grain - 0.5) * 0.08 + (flute - 0.5) * 0.05;
+      const o = (y * size + x) * 4;
+      img.data[o] = Math.max(0, Math.min(255, Math.round(base.r * v)));
+      img.data[o + 1] = Math.max(0, Math.min(255, Math.round(base.g * v)));
+      img.data[o + 2] = Math.max(0, Math.min(255, Math.round(base.b * v)));
+      img.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return {
+    map: toTexture(canvas, 2, true),
+    bumpMap: toTexture(canvas, 2, false),
+  };
+}
+
+/** Shared so the vignette slider can update every tile at once. */
+const vignetteUniform = { value: 0.35 };
+
+export function setVignette(amount: number): void {
+  vignetteUniform.value = Math.max(0, Math.min(1, amount));
+}
+
+/**
+ * Darken a tile toward its edges. Injected after `<map_fragment>` so it rides
+ * on top of the albedo (art print / cloth) without a separate pass.
+ */
+export function attachTileVignette(material: MeshPhysicalMaterial): void {
+  if (material.userData.vignetteAttached) return;
+  material.userData.vignetteAttached = true;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uVignette = vignetteUniform;
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform float uVignette;")
+      .replace(
+        "#include <map_fragment>",
+        "#include <map_fragment>\n#ifdef USE_MAP\n  float hexVig = distance(vMapUv, vec2(0.5));\n  diffuseColor.rgb *= 1.0 - smoothstep(0.22, 0.5, hexVig) * uVignette;\n#endif",
+      );
+  };
+  material.customProgramCacheKey = () => "hex-tile-vignette";
+  material.needsUpdate = true;
 }

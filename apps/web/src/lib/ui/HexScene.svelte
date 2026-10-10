@@ -1,7 +1,13 @@
 <script lang="ts">
 import { T, useTask, useThrelte } from "@threlte/core";
 import { OrbitControls } from "@threlte/extras";
-import { type CanvasTexture, type Mesh, Raycaster, Vector2 } from "three";
+import {
+  type CanvasTexture,
+  type Mesh,
+  MeshPhysicalMaterial,
+  Raycaster,
+  Vector2,
+} from "three";
 import {
   HEX_RADIUS,
   SEA_COLOR,
@@ -11,6 +17,7 @@ import {
 } from "./hex3d";
 import {
   artIndexFor,
+  createCardboard,
   createLinenBundle,
   createMaterialBundle,
   createPhotoBundle,
@@ -18,6 +25,7 @@ import {
   createStylizedBundle,
   loadArtTextures,
   setLinenRepeat,
+  setVignette,
   type TextureBundle,
   type TextureMode,
 } from "./hexTextures";
@@ -30,6 +38,7 @@ let {
   animateSea,
   linenScale,
   linenDepth,
+  vignette,
   onHover,
 }: {
   tiles: Tile3D[];
@@ -38,6 +47,7 @@ let {
   animateSea: boolean;
   linenScale: number;
   linenDepth: number;
+  vignette: number;
   onHover?: (tile: Tile3D | null) => void;
 } = $props();
 
@@ -102,6 +112,20 @@ $effect(() => {
 // Live fabric tuning for the linen look.
 $effect(() => {
   setLinenRepeat(linenScale);
+});
+
+$effect(() => {
+  setVignette(vignette);
+});
+
+// Kraft-cardboard material shared by every tile's cut sides.
+const cardboard = createCardboard();
+const cardboardMaterial = new MeshPhysicalMaterial({
+  map: cardboard.map,
+  bumpMap: cardboard.bumpMap,
+  bumpScale: 0.015,
+  roughness: 0.95,
+  metalness: 0,
 });
 
 // --- Interaction -----------------------------------------------------------
@@ -217,19 +241,29 @@ function registerMesh(ref: Mesh): () => void {
   {@const lift = hovered ? (isSea ? 0.06 : 0.18) : 0}
   <T.Mesh
     position={[tile.x, height / 2 + lift, tile.z]}
-    userData={{ tile }}
+    material={cardboardMaterial}
     castShadow
     receiveShadow
-    oncreate={(ref) => registerMesh(ref)}
   >
-    <T.CylinderGeometry args={[HEX_RADIUS, HEX_RADIUS, height, 6]} />
-    <HexTileMaterial
-      {recipe}
-      {color}
-      {hovered}
-      variant={materialKey}
-      {artMap}
-      normalScaleOverride={mode === "linen" ? linenDepth : null}
-    />
+    <!-- Cardboard body: open-ended so only the cut sides show. -->
+    <T.CylinderGeometry args={[HEX_RADIUS, HEX_RADIUS, height, 6, 1, true]} />
+    <!-- Linen-printed top face, and the raycast target. -->
+    <T.Mesh
+      position={[0, height / 2, 0]}
+      userData={{ tile }}
+      castShadow
+      receiveShadow
+      oncreate={(ref) => registerMesh(ref)}
+    >
+      <T.CylinderGeometry args={[HEX_RADIUS, HEX_RADIUS, 0.004, 6]} />
+      <HexTileMaterial
+        {recipe}
+        {color}
+        {hovered}
+        variant={materialKey}
+        {artMap}
+        normalScaleOverride={mode === "linen" ? linenDepth : null}
+      />
+    </T.Mesh>
   </T.Mesh>
 {/each}

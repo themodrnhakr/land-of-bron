@@ -27,8 +27,9 @@ let seed = $state<number>(DEFAULT_SEED);
 let hovered = $state<Tile3D | null>(null);
 let mode = $state<TextureMode>("linen");
 let animateSea = $state<boolean>(true);
-let linenScale = $state<number>(0.3);
-let linenDepth = $state<number>(2.5);
+let linenScale = $state<number>(0.4);
+let linenDepth = $state<number>(3.5);
+let vignette = $state<number>(0.35);
 
 const board = $derived.by(() => {
   const playerCount = Math.min(7, Math.max(3, Math.round(nationCount)));
@@ -104,6 +105,7 @@ const tiles = $derived(board.tiles);
         {animateSea}
         {linenScale}
         {linenDepth}
+        {vignette}
         onHover={(tile) => (hovered = tile)}
       />
     </Canvas>
@@ -227,6 +229,20 @@ const tiles = $derived(board.tiles);
         />
       </div>
     {/if}
+
+    <div class="control-group">
+      <label for="vignette">Vignette: <strong>{
+          vignette.toFixed(2)
+        }</strong></label>
+      <input
+        id="vignette"
+        type="range"
+        min="0"
+        max="0.8"
+        step="0.05"
+        bind:value={vignette}
+      />
+    </div>
   </header>
 
   <footer class="status-bar">

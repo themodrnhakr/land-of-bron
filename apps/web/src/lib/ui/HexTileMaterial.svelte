@@ -1,7 +1,7 @@
 <script lang="ts">
 import { T } from "@threlte/core";
 import type { MeshPhysicalMaterial, Texture } from "three";
-import type { SurfaceRecipe } from "./hexTextures";
+import { attachTileVignette, type SurfaceRecipe } from "./hexTextures";
 
 let {
   recipe,
@@ -36,7 +36,10 @@ $effect(() => {
   void variant;
   void recipe;
   void artMap;
-  if (mat) mat.needsUpdate = true;
+  if (mat) {
+    attachTileVignette(mat);
+    mat.needsUpdate = true;
+  }
 });
 </script>
 
