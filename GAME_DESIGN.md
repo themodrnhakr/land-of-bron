@@ -104,8 +104,24 @@
     	- *Trade Agreements* allow for mutal Port usage by merchant ships and the building of Trading Posts without he need for Trade Influence. Both countries must have embassies in each others' capital tiles for this stipulation to be agreed to.
         - *Military Alliances* allow for mutual Port usage by naval ships and bind each other to military aid. The latter means that if militarily allied Army units are present in the same tile, then attack and defend together. This also means that each others' territories are considered same-color for purposes of Army unit supply.
 	- *Protectorate Proposals* may be initiated by either the Protector state or the Protected state. If both sides agree to the proposal, the Protector state will have proxy access to all of the Protected state's treaty agreements and can treat the Protected state's color and controlled tiles as their own for Army unit supply purposes. The Protected state cannot be attacked by the Protector state.
+    - *Peace Talks* may be initiated by 1) a nation who has opposing military units in one of their color's tiles, or whose tiles are controlled by the opposing nation; or 2) a nation who has military units in another nation's colored tiles, or controlls another nation's tiles. Each side may propose peace conditions, including a) territorial exchange, b) resource exchange (essentially exchange of resource tokens), c) withdrawl of army units, d) or removal of specific Works. If both sides are able to agree on peace conditions, said conditions are immediately carried out and nations party to the Peace Agreement may not attack each other. More than two nations can participate in a single Peace Agreement, so long as each nation could theoritically fulfill one or more of the initiation conditions.
+    - *Abrogation* may be initiated by any party to a Trade Agreement, Military Alliance, Protectorate Arrangement, or Peace Agreement. Only one may be terminated per one influence spent. Abrogation abolishes said arrangement.
 
 # Works
+    
+## Production Facilities
+
+## Railroads
+
+## Embassies
+
+## Trading Posts
+
+## Ports
+
+## Ships
+
+## Defenses
 
 # Units
 
